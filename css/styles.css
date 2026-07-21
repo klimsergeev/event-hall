@@ -341,12 +341,13 @@ html, body {
 .map-content.animated {
     transition: transform 260ms cubic-bezier(0.2, 0, 0, 1);
 }
-.map-content .hall-img {
+.map-content .hall-svg { display: block; }
+/* инлайн-SVG схемы: тянется по контейнеру, остаётся вектором при transform: scale() */
+.map-content .hall-svg svg {
     display: block;
     width: 100%;
     height: auto;
     user-select: none;
-    -webkit-user-drag: none;
     pointer-events: none;
 }
 

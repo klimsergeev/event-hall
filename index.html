@@ -34,7 +34,8 @@
     <!-- 2. Схема зала (пан/зум) -->
     <div class="map-viewport">
         <div class="map-content">
-            <img class="hall-img" src="assets/hall.svg" alt="Схема зала" draggable="false">
+            <!-- инлайн-SVG схемы инжектится из assets/hall.svg (вектор в DOM) -->
+            <div class="hall-svg" role="img" aria-label="Схема зала"></div>
         </div>
         <div class="scale-badge">1.0×</div>
     </div>

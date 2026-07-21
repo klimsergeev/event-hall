@@ -135,7 +135,16 @@ function onScaleShow(scale, show) {
     badge.classList.toggle('show', show);
 }
 
+/* --- Инлайн-SVG схемы (вектор в DOM, чёткий на зуме) --- */
+function injectHall() {
+    fetch('assets/hall.svg')
+        .then((r) => r.text())
+        .then((svg) => { $('.hall-svg').innerHTML = svg; })
+        .catch((e) => console.error('hall.svg load failed', e));
+}
+
 /* --- Инициализация --- */
+injectHall();
 renderTabs();
 renderLegend();
 renderTickets();
@@ -154,3 +163,5 @@ centerActiveChip(scroller, chipEls[activeId]);
 
 // QA-хук: #compact — форсировать компактный режим (без взаимодействия)
 if (location.hash === '#compact') applyCompact(true);
+// QA-хук: #zoom — форсировать зум схемы (проверка чёткости вектора)
+if (location.hash === '#zoom') hall.zoomBy(1.6);
