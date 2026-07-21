@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Схема зала — TLND-15971</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <link rel="stylesheet" href="css/colors_and_type.css">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="app">
+    <!-- 1. Шапка -->
+    <header class="header">
+        <!-- заголовок -->
+        <div class="title">
+            <button class="icon-btn" type="button" aria-label="Назад"></button>
+            <div class="title-text">
+                <div class="ttl">
+                    <span class="ttl-inner"></span>
+                    <span class="ttl-fade ttl-fade-l"></span>
+                    <span class="ttl-fade ttl-fade-r"></span>
+                </div>
+                <div class="sub"></div>
+            </div>
+        </div>
+        <!-- лента сеансов -->
+        <div class="tabs">
+            <div class="scroller"></div>
+        </div>
+        <!-- легенда цен -->
+        <div class="legend"></div>
+    </header>
+
+    <!-- 2. Схема зала (пан/зум) -->
+    <div class="map-viewport">
+        <div class="map-content">
+            <img class="hall-img" src="assets/hall.svg" alt="Схема зала" draggable="false">
+        </div>
+        <div class="scale-badge">1.0×</div>
+    </div>
+
+    <!-- 3. Нижний блок: билеты + CTA -->
+    <div class="floating">
+        <div class="slider"></div>
+        <button class="cta" type="button"></button>
+    </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

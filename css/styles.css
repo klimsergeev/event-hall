@@ -1,0 +1,469 @@
+/* ============================================================
+   Hall — схема зала (TLND-15971)
+   Мобильный лейаут, max-width 416px, fluid.
+   Значения из Figma (4902-80250) + токены Granit (colors_and_type.css).
+   Компактификация/marquee — порт логики из handoff.
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    background: #d9dade;                 /* фон вокруг «телефона» */
+    font-family: var(--font-sans);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+/* ---------- Каркас экрана ---------- */
+.app {
+    position: relative;
+    width: 100%;
+    max-width: 416px;
+    height: 100dvh;
+    margin: 0 auto;
+    background: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(35, 29, 31, 0.06);
+}
+
+/* ============================================================
+   1. Шапка
+   ============================================================ */
+.header {
+    position: relative;
+    z-index: 3;
+    flex: 0 0 auto;
+    background: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* ---- 1.1 Заголовок ---- */
+.title {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 20px 16px 0;
+    min-width: 0;
+}
+.icon-btn {
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    padding: 0;
+    border-radius: 999px;
+    background: var(--ctrl-secondary);
+    color: var(--icon-primary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: width 220ms cubic-bezier(0.2, 0, 0, 1),
+                height 220ms cubic-bezier(0.2, 0, 0, 1),
+                background-color 150ms ease-out;
+}
+.icon-btn:active { background: var(--ctrl-secondary-hover); }
+/* компакт: плоский шеврон 22×22 без фона */
+.header.compact .icon-btn {
+    width: 22px;
+    height: 22px;
+    background: transparent;
+}
+.header.compact .icon-btn:active { background: transparent; }
+
+.title-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+.header.compact .title-text {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 6px;
+}
+
+/* заголовок — развёрнутый (serif, A1 20/30) */
+.ttl {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: var(--fs-p1);          /* 20px */
+    line-height: var(--lh-p1);        /* 30px */
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+/* заголовок — компакт (sans 600, C1 12/18). БЕЗ transition на font-size. */
+.header.compact .ttl {
+    font-family: var(--font-sans);
+    font-size: var(--fs-c1);          /* 12px */
+    line-height: var(--lh-c1);        /* 18px */
+    font-weight: 600;
+    letter-spacing: -0.1px;
+    flex: 0 0 auto;
+}
+/* заголовок — окно marquee */
+.header.compact.marquee .ttl {
+    position: relative;
+    width: 125px;
+    max-width: 125px;
+    overflow: hidden;
+    text-overflow: clip;
+}
+.header.compact.marquee .ttl .ttl-inner {
+    display: inline-block;
+    white-space: nowrap;
+    will-change: transform;
+}
+/* краевые градиенты marquee — opacity из JS */
+.ttl-fade { display: none; }
+.header.compact.marquee .ttl-fade {
+    display: block;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 18px;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 1;
+}
+.header.compact.marquee .ttl-fade-l {
+    left: 0;
+    background: linear-gradient(90deg, var(--bg-primary) 20%, rgba(255, 255, 255, 0) 100%);
+}
+.header.compact.marquee .ttl-fade-r {
+    right: 0;
+    background: linear-gradient(270deg, var(--bg-primary) 20%, rgba(255, 255, 255, 0) 100%);
+}
+
+/* подзаголовок — площадка (P3 14/21) */
+.sub {
+    font: 400 var(--fs-p3)/var(--lh-p3) var(--font-sans);
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.header.compact .sub {
+    font-size: var(--fs-c1);
+    line-height: var(--lh-c1);
+    flex: 0 1 auto;
+    min-width: 24px;
+    position: relative;
+    padding-left: 12px;
+}
+.header.compact .sub::before {          /* точка-разделитель */
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--text-tertiary);
+}
+
+/* ---- 1.2 Лента сеансов (табы) ---- */
+.tabs {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+}
+.tabs .scroller {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 0 16px;
+    scroll-padding-left: 16px;
+    scroll-behavior: smooth;
+}
+.tabs .scroller::-webkit-scrollbar { display: none; }
+
+.tab {
+    flex: 0 0 156px;
+    width: 156px;
+    height: 64px;
+    box-sizing: border-box;
+    background: var(--bg-secondary);
+    border: 1px solid transparent;
+    border-radius: 16px;
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    transition:
+        background-color 150ms ease-out,
+        border-color 150ms ease-out,
+        flex-basis 220ms cubic-bezier(0.2, 0, 0, 1),
+        width 220ms cubic-bezier(0.2, 0, 0, 1),
+        height 220ms cubic-bezier(0.2, 0, 0, 1),
+        padding 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+.tab.active {
+    background: var(--bg-modal);
+    border-color: var(--ctrl-active);   /* #2d0514 */
+}
+/* строка даты — Tercia A3 14/21 */
+.tab .tab-date {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    font: 400 var(--fs-p3)/var(--lh-p3) var(--font-serif);
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+.tab .tab-date .wd { color: var(--text-primary); }
+.tab .tab-date.weekend .wd { color: var(--text-negative); }
+/* строка цены — Statika C1 12/18 */
+.tab .tab-price {
+    font: 400 var(--fs-c1)/var(--lh-c1) var(--font-sans);
+    color: var(--text-primary);
+    white-space: nowrap;
+    margin-top: 2px;
+}
+.tab .tab-compact { display: none; }
+
+/* компакт-таб — пилюля «28 авг · 20:00» */
+.tabs.compact .tab {
+    flex: 0 0 auto;
+    width: auto;
+    height: auto;
+    padding: 5px 12px;
+    border-radius: 999px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+.tabs.compact .tab .tab-date,
+.tabs.compact .tab .tab-price { display: none; }
+.tabs.compact .tab .tab-compact {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font: 500 12px/16px var(--font-sans);
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+.tabs.compact .tab .tab-compact .sep {
+    width: 2.5px;
+    height: 2.5px;
+    border-radius: 50%;
+    background: var(--text-tertiary);
+    display: inline-block;
+}
+.tabs.compact .tab .tab-compact .time {
+    color: var(--text-secondary);
+    font-weight: 400;
+}
+.tabs.compact .tab.active .tab-compact .time {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+/* ---- 1.3 Легенда цен (Hall price filter) ---- */
+.legend {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 0 12px 8px;
+    scroll-padding-left: 12px;
+    transition: padding 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+.legend::-webkit-scrollbar { display: none; }
+.legend .pill {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 32px;
+    padding: 8px 12px;
+    background: #f2f3f7;                 /* background/secondary (MTS scale) */
+    border-radius: 8px;
+    font: 400 14px/20px var(--font-sans);
+    color: #1d2023;
+    white-space: nowrap;
+}
+.legend .pill .sw {
+    width: 12px;
+    height: 12px;
+    border-radius: 4px;
+    flex: 0 0 auto;
+}
+
+/* ============================================================
+   2. Схема зала (пан/зум)
+   ============================================================ */
+.map-viewport {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--bg-primary);
+    touch-action: none;
+    cursor: grab;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 6px;
+}
+.map-viewport.grabbing { cursor: grabbing; }
+.map-content {
+    /* Базовый размер схемы в покое (transform остаётся scale(1), чтобы не
+       ломать порог компактификации). 130% ширины вьюпорта → схема ~1.3× от
+       fit-width и по высоте заполняет область между легендой и билетами, как
+       в Figma; боковые ряды уходят под край (‹›-стрелки за кадром, как в макете). */
+    flex: 0 0 auto;
+    width: 130%;
+    transform-origin: center center;
+    will-change: transform;
+}
+.map-content.animated {
+    transition: transform 260ms cubic-bezier(0.2, 0, 0, 1);
+}
+.map-content .hall-img {
+    display: block;
+    width: 100%;
+    height: auto;
+    user-select: none;
+    -webkit-user-drag: none;
+    pointer-events: none;
+}
+
+/* индикатор масштаба */
+.scale-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--bg-inverted);
+    color: var(--text-inverted);
+    font: 500 12px/16px var(--font-sans);
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 160ms ease-out, transform 160ms ease-out;
+    pointer-events: none;
+    z-index: 2;
+}
+.scale-badge.show { opacity: 1; transform: translateY(0); }
+
+/* ============================================================
+   3. Нижний блок — билеты + CTA
+   ============================================================ */
+.floating {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
+    pointer-events: none;               /* клики только по интерактивным детям */
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, var(--bg-primary) 42%);
+}
+.floating > * { pointer-events: auto; }
+
+/* ---- 3.1 Слайдер выбранных мест ---- */
+.slider {
+    position: relative;
+    height: 52px;
+    width: 100%;
+    isolation: isolate;
+}
+.ticket {
+    position: absolute;
+    top: 0;
+    background: var(--ctrl-alternative);  /* white */
+    border-radius: 26px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-left: 24px;
+    padding-right: 12px;
+    height: 52px;
+    box-shadow: var(--shadow-low);
+    overflow: hidden;
+}
+/* геометрия перекрытия — из Figma (slider 328: 0/65.5/127, ширины 205/201/201) */
+.ticket.front { left: 0;        width: 205px; z-index: 3; }
+.ticket.mid   { right: 61.5px;  width: 201px; z-index: 2; }
+.ticket.back  { right: 0;       width: 201px; z-index: 1; }
+.ticket.front {
+    top: -6px;
+    height: 64px;
+    border-radius: 32px;
+    border: 2px solid var(--bg-stroke);
+    box-shadow: none;
+}
+.ticket .t-text {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    white-space: nowrap;
+}
+.ticket .t-seat {
+    font: 400 var(--fs-p2)/var(--lh-p2) var(--font-sans);
+    color: var(--text-primary);
+}
+.ticket .t-price {
+    font: 400 var(--fs-p3)/var(--lh-p3) var(--font-sans);
+    color: var(--text-secondary);
+}
+.ticket .t-x {
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: var(--icon-secondary);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- 3.2 CTA ---- */
+.cta {
+    width: 100%;
+    height: 52px;
+    border: 0;
+    border-radius: 26px;
+    background: var(--ctrl-primary);      /* #ff5005 */
+    color: var(--text-inverted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding-left: 32px;
+    padding-right: 24px;
+    font: 500 var(--fs-p2)/var(--lh-p2) var(--font-sans);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.cta:active { background: var(--ctrl-primary-press); }
+.cta .cta-ico { flex: 0 0 auto; display: inline-flex; }

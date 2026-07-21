@@ -1,0 +1,310 @@
+/* ============================================================
+   Granit Design System — Foundation tokens (Light)
+   Source: skill-granit-library/DESIGN.md (Granit Base Figma)
+   ============================================================ */
+
+/* ---------- Fonts ---------- */
+@font-face {
+  font-family: "Tercia";
+  src: url("../fonts/Tercia-Light.otf") format("opentype");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Tercia";
+  src: url("../fonts/Tercia-Regular.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Statika";
+  src: url("../fonts/Statika-Light.otf") format("opentype");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Statika";
+  src: url("../fonts/Statika-Regular.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Statika";
+  src: url("../fonts/Statika-Medium.otf") format("opentype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Statika";
+  src: url("../fonts/Statika-Bold.otf") format("opentype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Statika";
+  src: url("../fonts/Statika-Black.otf") format("opentype");
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ---------- Font families ---------- */
+  --font-serif: "Tercia", "Lora", Georgia, "Times New Roman", serif;
+  --font-sans:  "Statika", "Inter", "Helvetica Neue", Arial, sans-serif;
+
+  /* ---------- Text (Light) ---------- */
+  --text-primary:           #231d1f;
+  --text-secondary:         #706e6f;
+  --text-tertiary:          #a2a0a1;
+  --text-inverted:          #fafafa;
+  --text-positive:          #2ab22a;
+  --text-negative:          #e5402e;
+  --text-warning:           #f59400;
+  --text-link:              #208ef5;
+  --text-link-inverted:     #5abefa;
+  --text-secondary-link:    #706e6f;
+
+  /* ---------- Background (Light) ---------- */
+  --bg-primary:             #ffffff;
+  --bg-primary-elevated:    #fafafa;
+  --bg-secondary:           #f5f4f2;
+  --bg-secondary-elevated:  #ffffff;
+  --bg-modal:               #ffffff;
+  --bg-inverted:            #231d1f;
+  --bg-overlay:             rgba(15, 15, 15, 0.50);
+  --bg-stroke:              rgba(162, 162, 162, 0.50);
+  --bg-stroke-disabled:     rgba(162, 162, 162, 0.25);
+
+  /* ---------- Brand ---------- */
+  --brand-mts:              #ff0032;
+  --brand-mts-money:        #8f8fff;
+  --brand-mts-money-text:   #7878d6;
+  --brand-mts-money-stroke: #e3e3ff;
+
+  /* Ticketland brand gradient (cover, hero) */
+  --brand-grad-cover:       linear-gradient(90deg, #7d0a5f 0%, #c30a57 100%);
+  --brand-grad-hero:        linear-gradient(135deg, #4e0a76 0%, #c30a57 45%, #ff5005 100%);
+  --brand-pink:             #c30a57;
+  --brand-plum:             #7d0a5f;
+  --brand-wine:             #2d0514;
+
+  /* ---------- Icons (Light) ---------- */
+  --icon-primary:           #231d1f;
+  --icon-secondary:         #a2a0a1;
+  --icon-tertiary:          #bebdbd;
+  --icon-inverted:          #fafafa;
+
+  /* ---------- Controls (Light) ---------- */
+  --ctrl-primary:           #ff5005; /* CTA orange */
+  --ctrl-primary-hover:     #ff6a2b;
+  --ctrl-primary-press:     #c32d0a;
+  --ctrl-secondary:         #f5f4f2;
+  --ctrl-secondary-hover:   #ececea;
+  --ctrl-active:            #2d0514;
+  --ctrl-inactive:          rgba(162, 160, 161, 0.20);
+  --ctrl-stroke:            #a2a0a1;
+  --ctrl-alternative:       #ffffff;
+
+  /* ---------- Accent (Light) ---------- */
+  --accent-active:          #0887ff;
+  --accent-positive:        #27c227;
+  --accent-warning:         #fa9b0a;
+  --accent-negative:        #ff5005;
+
+  /* ---------- Badges (Light) ---------- */
+  --badge-neutral:          #f5f4f2;
+  --badge-sapphire:         #bfebff;
+  --badge-emerald:          #c1f5c1;
+  --badge-citrine:          #fff3a6;
+  --badge-garnet:           #ffccd4;
+  --badge-amethyst:         #dec5ed;
+  --badge-topaz:            #fae7d2;
+  --badge-ruby:             #e5beda;
+  --badge-amber:            #ebcec0;
+  --badge-light:            rgba(242, 243, 247, 0.70);
+  --badge-dark:             rgba(42, 42, 42, 0.50);
+
+  /* ---------- Constant scale (used in charts & illustration) ---------- */
+  --gs-900: #000000; --gs-800: #1d2023; --gs-700: #2c3135; --gs-600: #434a51;
+  --gs-500: #626c77; --gs-400: #969fa8; --gs-300: #bbc1c7; --gs-200: #e2e5eb;
+  --gs-100: #f2f3f7; --gs-0:   #ffffff;
+
+  --ruby-900:  #7d0a5f; --ruby-700: #a80d80; --ruby-500: #e317b7; --ruby-300: #e06ec3; --ruby-100: #e5beda;
+  --gar-900:   #6e140f; --gar-700:  #b20e27; --gar-500:  #e32441; --gar-300:  #f591a0; --gar-100:  #ffccd4;
+  --amb-900:   #8e2209; --amb-700:  #c32d0a; --amb-500:  #ff5005; --amb-300:  #ff9452; --amb-100:  #ebcec0;
+  --top-900:   #743c0c; --top-700:  #b86404; --top-500:  #fa9b0a; --top-300:  #f0bf87; --top-100:  #fae7d2;
+  --cit-900:   #765e0a; --cit-700:  #c29500; --cit-500:  #f5d300; --cit-300:  #ffe64b; --cit-100:  #fff3a6;
+  --eme-900:   #1c631c; --eme-700:  #289a28; --eme-500:  #27c227; --eme-300:  #6ee16e; --eme-100:  #c1f5c1;
+  --sap-900:   #0d4d73; --sap-700:  #0277bd; --sap-500:  #0887ff; --sap-300:  #5abefa; --sap-100:  #bfebff;
+  --ame-900:   #4e0a76; --ame-700:  #7304b5; --ame-500:  #a000ff; --ame-300:  #bc7be3; --ame-100:  #dec5ed;
+
+  /* ---------- Brand gradients ---------- */
+  --grad-garnet-darker:    linear-gradient(135deg, #2d0514 0%, #b20e27 100%);
+  --grad-amber-darker:     linear-gradient(135deg, #2d0514 0%, #c32d0a 100%);
+  --grad-ruby-amber:       linear-gradient(135deg, #7d0a5f 0%, #c32d0a 100%);
+  --grad-amethyst-amber:   linear-gradient(135deg, #a000ff 0%, #ff5005 100%);
+  --grad-amethyst-garnet:  linear-gradient(135deg, #a000ff 0%, #f591a0 100%);
+  --grad-ruby-garnet:      linear-gradient(135deg, #e317b7 0%, #f591a0 100%);
+  --grad-amber:            linear-gradient(135deg, #c32d0a 0%, #ff9452 100%);
+  --grad-amber-topaz-dark: linear-gradient(135deg, #ff5005 0%, #fa9b0a 100%);
+  --grad-amber-topaz-lt:   linear-gradient(135deg, #ff9452 0%, #f0c887 50%, #fae7d2 100%);
+  --grad-garnet-citrine:   linear-gradient(135deg, #f591a0 0%, #ffe64b 100%);
+  --grad-topaz-citrine:    linear-gradient(135deg, #fa9b0a 0%, #ffe64b 50%, #fff3a6 100%);
+  --grad-citrine:          linear-gradient(135deg, #ffe64b 0%, #fff3a6 100%);
+  --grad-topaz:            linear-gradient(135deg, #f0c887 0%, #fae7d2 100%);
+  --grad-topaz-lighter:    linear-gradient(135deg, #fae7d2 0%, #fdf9f5 100%);
+
+  /* ---------- Shadows (2-layer; base #231d1f) ---------- */
+  --shadow-lowest:        0 4px 16px 0 rgba(35,29,31,0.04), 0 0 6px 0 rgba(35,29,31,0.04);
+  --shadow-low:           0 8px 20px 0 rgba(35,29,31,0.06), 0 4px 24px 0 rgba(35,29,31,0.04);
+  --shadow-middle:        0 8px 20px 0 rgba(35,29,31,0.06), 0 4px 24px 0 rgba(35,29,31,0.04);
+  --shadow-high:          0 18px 20px 0 rgba(35,29,31,0.08), 0 6px 24px 0 rgba(35,29,31,0.06);
+  --shadow-upper-middle:  0 -8px 24px 0 rgba(35,29,31,0.06), 0 -2px 24px 0 rgba(35,29,31,0.04);
+
+  /* ---------- Radii ---------- */
+  --r-2:   2px;   /* favicon glyph chip */
+  --r-4:   4px;
+  --r-8:   8px;
+  --r-12: 12px;   /* small cards, inputs */
+  --r-16: 16px;   /* event/movie cards */
+  --r-20: 20px;
+  --r-24: 24px;   /* modals, banners */
+  --r-32: 32px;
+  --r-full: 9999px; /* pill buttons, badges, search */
+
+  /* ---------- Spacing scale (multiples of 4) ---------- */
+  --s-2:  2px;  --s-4:  4px;  --s-6:  6px;  --s-8:  8px;
+  --s-12: 12px; --s-16: 16px; --s-20: 20px; --s-24: 24px;
+  --s-32: 32px; --s-40: 40px; --s-48: 48px; --s-56: 56px;
+  --s-64: 64px; --s-80: 80px; --s-96: 96px; --s-120: 120px;
+
+  /* ---------- Background blur ---------- */
+  --blur-overlay: 50px;   /* full-page overlays */
+  --blur-chip:    15px;   /* badges, floating buttons */
+
+  /* ---------- Layout grid ---------- */
+  --grid-desktop-max: 1920px;
+  --grid-desktop-cols: 12;
+  --grid-desktop-gutter: 36px;
+  --grid-mobile-gutter: 16px;
+  --grid-mobile-margin: 16px;
+
+  /* ---------- Type tokens (Desktop) ---------- */
+  --fs-h1: 56px;    --lh-h1: 63px;
+  --fs-h2: 40px;    --lh-h2: 45px;
+  --fs-h3: 24px;    --lh-h3: 27px;
+  --fs-h4: 20px;    --lh-h4: 22.5px;
+  --fs-sub: 20px;   --lh-sub: 30px;
+  --fs-p1: 20px;    --lh-p1: 30px;
+  --fs-p2: 16px;    --lh-p2: 24px;
+  --fs-p3: 14px;    --lh-p3: 21px;
+  --fs-c1: 12px;    --lh-c1: 18px;
+  --fs-c2: 10px;    --lh-c2: 15px;
+  --fs-promo1: 88px; --lh-promo1: 99px;
+  --fs-promo2: 72px; --lh-promo2: 81px;
+  --fs-promo3: 56px; --lh-promo3: 63px;
+}
+
+/* Mobile overrides (apply with media query when needed) */
+@media (max-width: 768px) {
+  :root {
+    --fs-h1: 32px;  --lh-h1: 40px;
+    --fs-h2: 24px;  --lh-h2: 27px;
+    --fs-sub: 16px; --lh-sub: 24px;
+  }
+}
+
+/* ============================================================
+   Semantic typography classes (use directly or @extend)
+   ============================================================ */
+.gr-h1, h1 {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: var(--fs-h1);
+  line-height: var(--lh-h1);
+  color: var(--text-primary);
+  letter-spacing: 0;
+  margin: 0;
+}
+.gr-h2, h2 {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: var(--fs-h2);
+  line-height: var(--lh-h2);
+  color: var(--text-primary);
+  margin: 0;
+}
+.gr-h3, h3 {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: var(--fs-h3);
+  line-height: var(--lh-h3);
+  letter-spacing: -0.5px;
+  color: var(--text-primary);
+  margin: 0;
+}
+.gr-h4, h4 {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: var(--fs-h4);
+  line-height: var(--lh-h4);
+  letter-spacing: -0.5px;
+  color: var(--text-primary);
+  margin: 0;
+}
+.gr-subtitle, .gr-sub-reg {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: var(--fs-sub);
+  line-height: var(--lh-sub);
+  color: var(--text-primary);
+}
+.gr-sub-med {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: var(--fs-sub);
+  line-height: var(--lh-sub);
+  color: var(--text-primary);
+}
+.gr-p1     { font: 400 var(--fs-p1)/var(--lh-p1) var(--font-sans); color: var(--text-primary); }
+.gr-p1-med { font: 500 var(--fs-p1)/var(--lh-p1) var(--font-sans); color: var(--text-primary); }
+.gr-p2, p  { font: 400 var(--fs-p2)/var(--lh-p2) var(--font-sans); color: var(--text-primary); margin: 0; }
+.gr-p2-med { font: 500 var(--fs-p2)/var(--lh-p2) var(--font-sans); color: var(--text-primary); }
+.gr-p3     { font: 400 var(--fs-p3)/var(--lh-p3) var(--font-sans); color: var(--text-primary); }
+.gr-p3-med { font: 500 var(--fs-p3)/var(--lh-p3) var(--font-sans); color: var(--text-primary); }
+
+.gr-c1     { font: 400 var(--fs-c1)/var(--lh-c1) var(--font-sans); color: var(--text-secondary); }
+.gr-c1-med { font: 500 var(--fs-c1)/var(--lh-c1) var(--font-sans); color: var(--text-primary); }
+.gr-c2     { font: 400 var(--fs-c2)/var(--lh-c2) var(--font-sans); color: var(--text-secondary); }
+.gr-c2-med { font: 500 var(--fs-c2)/var(--lh-c2) var(--font-sans); color: var(--text-primary); letter-spacing: 0.02em; }
+
+/* Tercia "Accent" — same sizes as P1-P3 but serif */
+.gr-a1 { font: 400 var(--fs-p1)/var(--lh-p1) var(--font-serif); color: var(--text-primary); }
+.gr-a2 { font: 400 var(--fs-p2)/var(--lh-p2) var(--font-serif); color: var(--text-primary); }
+.gr-a3 { font: 400 var(--fs-p3)/var(--lh-p3) var(--font-serif); color: var(--text-primary); }
+
+/* Uppercase variants — short labels only */
+.gr-upp { text-transform: uppercase; letter-spacing: 0.02em; }
+
+/* Promo (DEPRECATED — only for legacy hero blocks) */
+.gr-promo1 { font: 400 var(--fs-promo1)/var(--lh-promo1) var(--font-serif); color: var(--text-primary); }
+.gr-promo2 { font: 400 var(--fs-promo2)/var(--lh-promo2) var(--font-serif); color: var(--text-primary); }
+.gr-promo3 { font: 400 var(--fs-promo3)/var(--lh-promo3) var(--font-serif); color: var(--text-primary); }
+
+/* Base body */
+html, body {
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+a { color: var(--text-link); text-decoration: none; }
+a:hover { text-decoration: underline; }
