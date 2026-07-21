@@ -323,27 +323,31 @@ html, body {
     touch-action: none;
     cursor: grab;
     display: flex;
-    align-items: flex-start;
+    align-items: stretch;
     justify-content: center;
-    padding-top: 6px;
 }
 .map-viewport.grabbing { cursor: grabbing; }
 .map-content {
-    /* Базовый размер схемы в покое: 130% ширины вьюпорта → схема ~1.3× от
-       fit-width и по высоте заполняет область между легендой и билетами, как
-       в Figma; боковые ряды уходят под край (‹›-стрелки за кадром, как в макете).
-       Зум/пан идут через viewBox инлайн-SVG, а НЕ через CSS transform на этом
-       слое, поэтому здесь НЕТ will-change/translateZ/transform — иначе браузер
-       промоутит слой в GPU-текстуру и вектор мылит на зуме (композитинг). */
+    /* COVER ПО ВЫСОТЕ: высота схемы = высоте области карты на ЛЮБОМ вьюпорте
+       (aspect-locked box: height 100% + aspect-ratio 536:442 → ширина по аспекту).
+       Ширина обычно > вьюпорта → боковые ряды уходят под край (overflow:hidden у
+       .map-viewport, центрирование justify-content:center). Так белого провала
+       снизу нет никогда, «Сцена» сверху области, аспект не искажён.
+       Зум/пан идут через viewBox инлайн-SVG (аспект box = аспекту viewBox 536:442,
+       поэтому математика зума валидна), а НЕ через CSS transform — здесь НЕТ
+       will-change/translateZ/transform, иначе слой промоутится в GPU-текстуру и
+       вектор мылит на зуме (композитинг). */
     flex: 0 0 auto;
-    width: 130%;
+    height: 100%;
+    width: auto;
+    aspect-ratio: 536 / 442;
 }
-.map-content .hall-svg { display: block; }
-/* инлайн-SVG схемы: тянется по контейнеру; зум через viewBox → всегда вектор */
+.map-content .hall-svg { display: block; height: 100%; }
+/* инлайн-SVG схемы: заполняет box; зум через viewBox → всегда вектор */
 .map-content .hall-svg svg {
     display: block;
     width: 100%;
-    height: auto;
+    height: 100%;
     user-select: none;
     pointer-events: none;
 }
@@ -369,20 +373,17 @@ html, body {
 /* ============================================================
    3. Нижний блок — билеты + CTA
    ============================================================ */
+/* Нижний блок — последний flex-элемент .app, пиннится вниз в потоке и
+   резервирует высоту под карту (карта cover-заполняет область над ним). */
 .floating {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    flex: 0 0 auto;
     z-index: 4;
     display: flex;
     flex-direction: column;
     gap: 16px;
     padding: 16px;
-    pointer-events: none;               /* клики только по интерактивным детям */
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, var(--bg-primary) 42%);
+    background: var(--bg-primary);
 }
-.floating > * { pointer-events: auto; }
 
 /* ---- 3.1 Слайдер выбранных мест ---- */
 .slider {
