@@ -2,7 +2,7 @@
    Точка входа: собирает экран, связывает пан/зум ↔ компакт ↔ marquee.
    ============================================================ */
 import { EVENT, SESSIONS, sessionTiers, sessionMin, MAX_SEATS, TWEAKS, formatPrice } from './data.js';
-import { CompactTitle, centerActiveChip } from './header.js';
+import { CompactTitle, alignActiveChip } from './header.js';
 import { HallViewport } from './hall.js';
 import { buildSeats, createSelectionLayer, applySessionPrices } from './seats.js';
 
@@ -64,7 +64,8 @@ function renderTabs() {
                 `<span class="sep"></span>` +
                 `<span class="time">${s.time}</span>` +
             `</span>`;
-        btn.addEventListener('click', () => onChipChange(s.id));
+        // активный чип некликабелен: реагируем только на клик по ДРУГОМУ чипу
+        btn.addEventListener('click', () => { if (s.id !== activeId) onChipChange(s.id); });
         chipEls[s.id] = btn;
         scroller.appendChild(btn);
     });
@@ -116,6 +117,9 @@ let activeTicket = 0;
 const ticketEls = [];
 let trackX = 0;                   // текущий сдвиг трека по X
 let stopSpring = null;            // отмена активной пружины
+let cardDX = [];                  // покадровый сдвиг каждой карточки по X (FLIP-реколл при удалении)
+let reflowSpring = null;          // отмена пружины реколла соседей
+let deleting = false;             // идёт анимация удаления — блок повторного удаления/драга
 
 /* пружина (velocity-based, rAF) — из anim/carousel.js */
 /* stiffness 840 (4× прежней 210 → ω вдвое выше → переход ~2× быстрее),
@@ -195,7 +199,9 @@ function paintDepth() {
         const cardLeft = trackX + i * PITCH;                  // левый край карточки i
         const dist = Math.abs(cardLeft - anchor) / PITCH;     // 0 у активной, 1 у соседа
         const t = Math.min(1, dist);
-        el.style.transform = 'none';                          // без scale → рендер-ширина = 231 → видимый зазор = 8px
+        // без scale → рендер-ширина = 231 → видимый зазор = 8px. cardDX[i]=0 в покое
+        // (translateX(0) ≡ none); ненулевой — только во время FLIP-реколла соседей при удалении.
+        el.style.transform = `translateX(${cardDX[i] || 0}px)`;
         el.style.zIndex = String(100 - Math.round(t * 10));   // peek-слои: активная поверх соседей
         el.classList.toggle('active', i === activeTicket);
     });
@@ -219,12 +225,14 @@ function setActiveTicket(i) {
 
 /* Рецентрирование без анимации (resize) */
 function recenterTickets() {
+    if (deleting) return;                         // не сбивать FLIP-реколл во время удаления
     if (ticketEls.length) setTrackX(targetXFor(activeTicket));
 }
 
-function renderTickets() {
+function renderTickets(opts = {}) {
     trackEl.innerHTML = '';
     ticketEls.length = 0;
+    cardDX = new Array(cart.length).fill(0);   // FLIP-сдвиги обнуляются на каждом ререндере
     cart.forEach((tk, idx) => {
         const card = document.createElement('div');
         card.className = 'ticket';
@@ -245,10 +253,11 @@ function renderTickets() {
         xBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
         xBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (idx === activeTicket) {
-                removeSeat(tk);
+            const i = ticketEls.indexOf(card);   // актуальный индекс на момент клика
+            if (i === activeTicket) {
+                deleteActiveTicket(i);            // активный билет — удаляем с fade-анимацией
             } else {
-                setActiveTicket(idx);
+                setActiveTicket(i);
             }
         });
         ticketEls.push(card);
@@ -257,7 +266,10 @@ function renderTickets() {
     if (ticketEls.length === 0) { setTrackX(0); return; }
     // клампим активную в новые границы и центрируем карусель на ней
     activeTicket = clamp(activeTicket, 0, ticketEls.length - 1);
-    snapTo(activeTicket);
+    // instant — мгновенно в целевую позицию (без пружины): нужно при удалении,
+    // чтобы поверх мгновенного лейаута наложить FLIP-реколл соседей.
+    if (opts.instant) setTrackX(targetXFor(activeTicket));
+    else snapTo(activeTicket);
 }
 
 /* --- drag галереи: тянем трек за пальцем 1:1, по отпусканию — снап/флик.
@@ -266,6 +278,7 @@ let tDrag = null;
 const TICKET_TAP = 8;             // px: движение меньше — это tap, а не drag
 
 function onTicketDown(e, el) {
+    if (deleting) return;
     if (e.target.closest('.t-x')) return;
     if (stopSpring) { stopSpring(); stopSpring = null; }
     tDrag = {
@@ -350,13 +363,92 @@ function addSeat(seat) {
     focusSeat(seat);
 }
 
-/* Убрать место: снять selected, выкинуть из корзины, вернуть в дефолт. */
+/* Убрать место: снять selected, выкинуть из корзины, вернуть в дефолт.
+   Мгновенный путь (тап по месту на схеме). Удаление через × активного билета
+   идёт через deleteActiveTicket (с fade-анимацией). */
 function removeSeat(seat) {
     const i = cart.indexOf(seat);
     if (i === -1) return;
     seat.selected = false;
     cart.splice(i, 1);
     refreshCart();
+}
+
+/* ============================================================
+   Удаление активного билета — CONCEPT «fade» (портирован из anim/del-fade.js).
+   Тайминги:
+     • exit-клон уходящей карточки: scale 1→.2 + opacity 1→0 на месте
+       (origin center), 140ms, cubic-bezier(.4,0,1,1) — быстрое «схлопывание точкой»;
+       рисуется поверх слайдера вне потока, чтобы не ломать layout карусели;
+     • реколл соседей: FLIP + velocity-spring (stiffness 940 / damping 41, ζ≈0.67) —
+       карточки плавно закрывают зазор на месте удалённой.
+   deleting-флаг блокирует повторное удаление/драг во время анимации.
+   Боевая логика удаления (снять selected, splice корзины, пересчёт CTA, схема
+   в дефолт, пустая корзина → скрыть кнопку) — сохранена, идёт синхронно. */
+const EXIT_MS = 140;
+const EXIT_EASING = 'cubic-bezier(.4,0,1,1)';
+
+function spawnExit(leavingEl) {
+    const sr = sliderEl.getBoundingClientRect();
+    const lr = leavingEl.getBoundingClientRect();
+    const clone = leavingEl.cloneNode(true);
+    clone.classList.add('exit-clone');
+    if (leavingEl.classList.contains('active')) clone.classList.add('active');
+    clone.style.left = (lr.left - sr.left) + 'px';
+    clone.style.top = (lr.top - sr.top) + 'px';
+    clone.style.width = lr.width + 'px';
+    clone.style.height = lr.height + 'px';
+    clone.style.transformOrigin = 'center center';
+    clone.style.transition = `transform ${EXIT_MS}ms ${EXIT_EASING}, opacity ${EXIT_MS}ms ${EXIT_EASING}`;
+    sliderEl.appendChild(clone);
+    requestAnimationFrame(() => {
+        clone.style.transform = 'scale(.2)';
+        clone.style.opacity = '0';
+    });
+    setTimeout(() => clone.remove(), EXIT_MS + 60);
+}
+
+function deleteActiveTicket(idx) {
+    if (deleting) return;
+    const seat = cart[idx];
+    if (!seat) return;
+    deleting = true;
+    if (stopSpring) { stopSpring(); stopSpring = null; }   // погасить возможный снап
+    const leavingEl = ticketEls[idx];
+
+    // FLIP: запомнить X оставшихся карточек ДО удаления (ключ — объект-место, стабильная ссылка)
+    const firstMap = new Map();
+    ticketEls.forEach((el, i) => { if (i !== idx) firstMap.set(cart[i], el.getBoundingClientRect().left); });
+
+    spawnExit(leavingEl);
+
+    // --- боевая логика удаления (без изменений по сути) ---
+    seat.selected = false;              // место схемы → дефолт
+    cart.splice(idx, 1);                // выкинуть из корзины
+    renderCTA();                        // пересчитать сумму / скрыть кнопку при пустой корзине
+    if (renderSelection) renderSelection(seats);   // перерисовать отметки на схеме
+
+    if (cart.length === 0) { renderTickets(); deleting = false; return; }
+
+    activeTicket = clamp(idx, 0, cart.length - 1);
+    renderTickets({ instant: true });   // мгновенный лейаут без пружины
+
+    // FLIP invert: сдвинуть каждую карточку обратно к её прежней позиции
+    const dx0 = ticketEls.map((el, i) => {
+        const f = firstMap.get(cart[i]);
+        const l = el.getBoundingClientRect().left;
+        return f == null ? 0 : (f - l);
+    });
+    cardDX = dx0.slice();
+    setTrackX(trackX);
+
+    // play: пружина ведёт сдвиги к 0 — соседи плавно закрывают зазор
+    if (reflowSpring) reflowSpring();
+    reflowSpring = spring({
+        from: 1, to: 0, stiffness: 940, damping: 41,
+        onUpdate: (p) => { for (let i = 0; i < cardDX.length; i++) cardDX[i] = dx0[i] * p; setTrackX(trackX); },
+        onDone: () => { cardDX = cardDX.map(() => 0); setTrackX(trackX); reflowSpring = null; deleting = false; },
+    });
 }
 
 /* Полный сброс корзины (смена сеанса): снять выбор со всех мест. */
@@ -390,6 +482,7 @@ function findNearestSeat(sx, sy, maxR) {
     return best;
 }
 function handleTap(clientX, clientY) {
+    if (deleting) return;                         // не трогаем корзину во время анимации удаления
     const p = hall.clientToSvg(clientX, clientY);
     if (!p) return;
     const seat = findNearestSeat(p.x, p.y, 8);   // R=8 SVG-юнитов (место 8 + зазор)
@@ -415,7 +508,10 @@ function onChipChange(id) {
     // и схема сбрасывается к загрузочному виду (зум/пан),
     // а через onInteractEnd разворачивает шапку из компакта
     hall.reset();
-    centerActiveChip(scroller, chipEls[id]);
+    // ставший активным чип: левый край ленты (последний — правый край).
+    // Без центрирования и без перемотки через начало — чистый одиночный скролл.
+    const isLast = SESSIONS.findIndex((s) => s.id === id) === SESSIONS.length - 1;
+    alignActiveChip(scroller, chipEls[id], isLast);
 }
 
 /* --- Компактификация шапки --- */
@@ -427,8 +523,9 @@ function applyCompact(on) {
     tabsWrap.classList.toggle('compact', on);
     // marquee активна только когда compact && shrinkTitle && marquee
     marquee.update(cls && TWEAKS.marquee);
-    // при разворачивании/схлопывании — держим активный чип в зоне видимости
-    centerActiveChip(scroller, chipEls[activeId]);
+    // БЕЗ автоцентрирования при разворачивании/схлопывании: разворот (компакт→полный)
+    // = обратная анимация сжатию, чипы растут на месте, лента НЕ перематывается
+    // (scrollLeft сохраняется).
 }
 
 /* --- Пересчёт схемы под размеры вьюпорта ---
@@ -484,8 +581,11 @@ const hall = new HallViewport($('.map-viewport'), $('.map-content'), {
     onTap: (cx, cy) => handleTap(cx, cy),
 });
 
-// стартовое центрирование активного чипа
-centerActiveChip(scroller, chipEls[activeId]);
+// стартовое выравнивание активного чипа (по умолчанию — левый край; последний — правый)
+{
+    const isLast = SESSIONS.findIndex((s) => s.id === activeId) === SESSIONS.length - 1;
+    alignActiveChip(scroller, chipEls[activeId], isLast);
+}
 
 // вписать всю схему в кадр (contain) сразу и после первого лейаута
 fitHall();
@@ -554,6 +654,47 @@ hallReady.then(() => {
     if (h === '#selxactive') { avail().slice(0, 2).forEach(addSeat); ticketEls[activeTicket].querySelector('.t-x').click(); }  // × активного билета → удаляется, в корзине 1
     if (h === '#hittest') tapSeat(avail()[0]);                         // реальный тап выбирает место
     if (h === '#selchip') { avail().slice(0, 2).forEach(addSeat); onChipChange(SESSIONS[1].id); }  // смена чипа → корзина сброшена
+
+    /* ---- QA-хуки удаления (fade) ---- */
+    // #delfade — 3 билета, активный средний, живой прогон удаления через 400ms
+    if (h === '#delfade') {
+        avail().slice(0, 3).forEach(addSeat);
+        activeTicket = 1; recenterTickets();
+        setTimeout(() => deleteActiveTicket(activeTicket), 400);
+    }
+    // #delframe — заморозить ~50% кадр удаления среднего билета (клон уменьшен, сосед на полпути)
+    if (h === '#delframe') {
+        avail().slice(0, 3).forEach(addSeat);
+        activeTicket = 1; recenterTickets();
+        const idx = activeTicket;
+        const leavingEl = ticketEls[idx];
+        const firstMap = new Map();
+        ticketEls.forEach((el, i) => { if (i !== idx) firstMap.set(cart[i], el.getBoundingClientRect().left); });
+        const sr = sliderEl.getBoundingClientRect();
+        const lr = leavingEl.getBoundingClientRect();
+        const clone = leavingEl.cloneNode(true);
+        clone.classList.add('exit-clone');
+        if (leavingEl.classList.contains('active')) clone.classList.add('active');
+        clone.style.left = (lr.left - sr.left) + 'px';
+        clone.style.top = (lr.top - sr.top) + 'px';
+        clone.style.width = lr.width + 'px';
+        clone.style.height = lr.height + 'px';
+        clone.style.transformOrigin = 'center center';
+        clone.style.transform = 'scale(.6)';   // середина уменьшения
+        clone.style.opacity = '0.45';
+        sliderEl.appendChild(clone);
+        const seat = cart[idx]; seat.selected = false;
+        cart.splice(idx, 1); renderCTA(); if (renderSelection) renderSelection(seats);
+        activeTicket = clamp(idx, 0, cart.length - 1);
+        renderTickets({ instant: true });
+        ticketEls.forEach((el, i) => {
+            const f = firstMap.get(cart[i]);
+            const l = el.getBoundingClientRect().left;
+            cardDX[i] = f == null ? 0 : (f - l) * 0.5;   // сосед на полпути
+        });
+        setTrackX(trackX);
+        deleting = true;
+    }
 
     /* ---- QA-хуки якоря галереи (3 билета, активный k, без анимации) ---- */
     const anchorTest = (k) => {

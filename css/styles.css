@@ -482,6 +482,17 @@ html, body {
 }
 .ticket .t-x svg { display: block; width: 24px; height: 24px; }   /* иконка × 24 у обоих (Figma + правка пользователя) */
 
+/* Клон уходящей карточки при удалении (fade): рисуется поверх слайдера, вне потока,
+   чтобы не ломать layout карусели. Наследует вид .ticket; геометрию/анимацию (scale→.2 +
+   opacity→0) задаёт JS (deleteActiveTicket в js/main.js). */
+.exit-clone {
+    position: absolute;
+    z-index: 200;
+    margin: 0;
+    cursor: default;
+    pointer-events: none;
+}
+
 /* ---- 3.2 CTA ---- */
 .cta {
     width: 100%;
