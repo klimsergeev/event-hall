@@ -28,7 +28,7 @@ html, body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: 0 0 0 1px rgba(35, 29, 31, 0.06);
+    /* без внешней тени/свечения — в Figma её нет (пиксель-перфект) */
 }
 
 /* ============================================================
@@ -383,6 +383,9 @@ html, body {
     pointer-events: none;   /* драг ловят сами карточки; пустоты пропускают пан схемы */
     touch-action: none;
 }
+/* Карточка билета (Figma tickets-gallery 4916-88407).
+   Активная — широкая пилюля; свёрнутые — ЧИПЫ: after = круглый ×-чип,
+   before = узкая полоска с номером+ценой (правый край уходит под активную). */
 .ticket {
     pointer-events: auto;
     touch-action: none;
@@ -397,26 +400,36 @@ html, body {
     gap: 16px;
     padding-left: 24px;
     padding-right: 12px;
-    box-shadow: var(--shadow-low);
+    box-shadow: var(--shadow-low);        /* shadow-low из Figma */
     overflow: hidden;
     cursor: grab;
     user-select: none;
-    z-index: 1;
+    white-space: nowrap;
 }
-.ticket + .ticket { margin-left: -16px; }   /* лёгкое перекрытие, как в референсе */
+.ticket + .ticket { margin-left: -16px; }   /* лёгкое перекрытие соседей */
 .slider.grabbing .ticket { cursor: grabbing; }
-/* активная — развёрнута на всю ширину контента */
+/* активная — развёрнута: h64, крупнее радиус, бордер вместо тени */
 .ticket.active {
     height: 64px;
     border-radius: 32px;
     border-color: var(--bg-stroke);
     box-shadow: none;
-    z-index: 3;
-    justify-content: flex-start;
 }
-/* свёрнутая — узкий чип; контент клипается overflow:hidden */
-.ticket.collapsed.before { width: 70px; justify-content: flex-start; } /* видно «94 ме» + цену */
-.ticket.collapsed.after  { width: 52px; justify-content: flex-end; }   /* видно только × */
+/* before — узкая полоска слева: номер + цена; × скрыт; правый край под активной */
+.ticket.collapsed.before {
+    width: 80px;
+    padding-right: 8px;
+}
+.ticket.collapsed.before .t-x { display: none; }
+/* after — круглый чип: ТОЛЬКО × по центру (диаметр = высоте карточки) */
+.ticket.collapsed.after {
+    width: 52px;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+    border-radius: 50%;
+}
+.ticket.collapsed.after .t-text { display: none; }
 .ticket .t-text {
     flex: 0 0 auto;
     display: flex;

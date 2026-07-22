@@ -106,13 +106,16 @@ function renderTickets() {
     layoutTickets();
 }
 
-/* Разложить карточки под текущий activeTicket (снап-состояние, без анимации) */
+/* Разложить карточки под текущий activeTicket (снап-состояние, без анимации).
+   z-index убывает с удалением от активной → активная сверху, соседи перекрыты:
+   те, что левее, показывают левый край (текст), правее — правый (×). */
 function layoutTickets() {
     ticketEls.forEach((el, i) => {
         el.classList.toggle('active', i === activeTicket);
         el.classList.toggle('collapsed', i !== activeTicket);
-        el.classList.toggle('before', i < activeTicket);   // свёрнута слева → видно начало
-        el.classList.toggle('after', i > activeTicket);     // свёрнута справа → видно ×
+        el.classList.toggle('before', i < activeTicket);   // слева → полоска (текст)
+        el.classList.toggle('after', i > activeTicket);     // справа → круглый ×-чип
+        el.style.zIndex = String(10 - Math.abs(i - activeTicket));
     });
 }
 
