@@ -41,7 +41,7 @@ export const TICKETS = [
 ];
 
 /* Итог CTA (Figma 4902:80257). */
-export const CTA_TOTAL = '10 709 652 ₽';
+export const CTA_TOTAL = '10 500 ₽';
 
 /* Прод-значения твиков (handoff TWEAKS.md). */
 export const TWEAKS = {
