@@ -155,5 +155,13 @@ centerActiveChip(scroller, chipEls[activeId]);
 
 // QA-хук: #compact — форсировать компактный режим (без взаимодействия)
 if (location.hash === '#compact') applyCompact(true);
-// QA-хук: #zoom — форсировать зум схемы (после инъекции SVG; проверка чёткости)
-hallReady.then(() => { if (location.hash === '#zoom') hall.zoomTo(2.6); });
+// QA-хуки (после инъекции SVG): #zoom, #edgeL/#edgeR/#edgeT/#edgeB — зум+пан к краю
+hallReady.then(() => {
+    const h = location.hash;
+    const BIG = 99999;
+    if (h === '#zoom') hall.zoomTo(2.6);
+    if (h === '#edgeL') { hall.zoomTo(2.6); hall.panTo(BIG, 0); }
+    if (h === '#edgeR') { hall.zoomTo(2.6); hall.panTo(-BIG, 0); }
+    if (h === '#edgeT') { hall.zoomTo(2.6); hall.panTo(0, BIG); }
+    if (h === '#edgeB') { hall.zoomTo(2.6); hall.panTo(0, -BIG); }
+});

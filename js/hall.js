@@ -53,10 +53,18 @@ export class HallViewport {
     }
 
     _clampPan(nx, ny, s) {
-        const w = this.vp.clientWidth;
-        const h = this.vp.clientHeight;
-        const maxX = ((s - 1) * w) / 2 + 40;
-        const maxY = ((s - 1) * h) / 2 + 40;
+        const vpw = this.vp.clientWidth;
+        const vph = this.vp.clientHeight;
+        // Реальный отрисованный размер схемы (CSS-box в cover-режиме — обычно
+        // шире вьюпорта). Эффективный размер на экране при зуме = RW·s × RH·s.
+        const rect = this.content.getBoundingClientRect();
+        const RW = rect.width || vpw;
+        const RH = rect.height || vph;
+        const M = 40; // допуск, чтобы крайнее место входило в кадр с отступом
+        // Предел пана: дальний край схемы доходит до края вьюпорта (+M),
+        // без гигантского пустого поля за краем.
+        const maxX = Math.max(0, (RW * s - vpw) / 2 + M);
+        const maxY = Math.max(0, (RH * s - vph) / 2 + M);
         return [Math.max(-maxX, Math.min(maxX, nx)), Math.max(-maxY, Math.min(maxY, ny))];
     }
 
@@ -148,6 +156,12 @@ export class HallViewport {
     zoomTo(s) {
         cancelAnimationFrame(this._raf);
         this._apply(Math.max(MIN_SCALE, Math.min(MAX_SCALE, s)), this.tx, this.ty);
+    }
+
+    /* Мгновенный пан (с клампом) на текущем зуме — для QA-проверок */
+    panTo(tx, ty) {
+        cancelAnimationFrame(this._raf);
+        this._apply(this.scale, tx, ty);
     }
 
     /* ---- pointer (мышь): drag-пан ---- */
