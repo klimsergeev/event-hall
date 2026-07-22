@@ -81,9 +81,41 @@ export function buildSeats(svgRoot) {
                 r.setAttribute('data-tier', color);
             }
 
-            seats.push({ el: r, section, row, seat: seatNo, price, tier: price != null ? color : null, status });
+            seats.push({ el: r, section, row, seat: seatNo, price, tier: price != null ? color : null, status, selected: false });
         });
     });
 
     return seats;
+}
+
+/* ============================================================
+   Selected-вид места (Figma-нода 4902-80205 / layout/hall-place.svg).
+   Выбранное место = оранжевый #FF5005 + белая галочка, ПЕРЕКРЫВАЕТ цвет тира.
+   Оригинальный rect места (8×8) не трогаем — рисуем поверх отдельный слой
+   <g class="sel-layer"> в конце <svg> (document order = сверху всех мест).
+   Разметка галочки взята дословно из hall-place.svg для 8px-варианта с
+   базовой точкой (88,16); для места (x,y) сдвигаем группу на (x-88, y-16). */
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const SEL_COLOR = '#FF5005';
+const CHECK_D = 'M94.5543 18.1123C94.7008 18.2587 94.7008 18.4962 94.5543 18.6426L91.5983 21.5986C91.528 21.6689 91.4326 21.7085 91.3332 21.7085C91.2337 21.7085 91.1383 21.6689 91.068 21.5986L89.4013 19.932C89.2549 19.7855 89.2549 19.5481 89.4013 19.4016C89.5478 19.2552 89.7852 19.2552 89.9317 19.4016L91.3332 20.8031L94.024 18.1123C94.1704 17.9658 94.4079 17.9658 94.5543 18.1123Z';
+
+function selectedGroup(x, y) {
+    return `<g transform="translate(${x - 88} ${y - 16})">`
+        + `<rect x="88" y="16" width="8" height="8" rx="2.5" fill="${SEL_COLOR}"/>`
+        + `<rect x="88" y="16" width="8" height="8" rx="2.5" stroke="${SEL_COLOR}" stroke-width="3"/>`
+        + `<path fill-rule="evenodd" clip-rule="evenodd" d="${CHECK_D}" fill="white"/>`
+        + `</g>`;
+}
+
+/* Создать слой выбора и вернуть функцию его перерисовки под список мест. */
+export function createSelectionLayer(svgRoot) {
+    const layer = document.createElementNS(SVG_NS, 'g');
+    layer.setAttribute('class', 'sel-layer');
+    svgRoot.appendChild(layer);
+    return function render(seats) {
+        layer.innerHTML = seats
+            .filter((s) => s.selected)
+            .map((s) => selectedGroup(+s.el.getAttribute('x'), +s.el.getAttribute('y')))
+            .join('');
+    };
 }

@@ -41,15 +41,9 @@ export function formatPrice(n) {
     return n.toLocaleString('ru-RU') + ' ₽';
 }
 
-/* Выбранные места (Figma слайдер билетов 4902:80253). */
-export const TICKETS = [
-    { seat: '94', row: '9', price: '3 500 ₽' },
-    { seat: '95', row: '9', price: '3 500 ₽' },
-    { seat: '96', row: '9', price: '3 500 ₽' },
-];
-
-/* Итог CTA (Figma 4902:80257). */
-export const CTA_TOTAL = '10 500 ₽';
+/* Корзина стартует ПУСТОЙ и наполняется выбором мест на схеме (см. js/main.js).
+   Максимум мест в заказе. */
+export const MAX_SEATS = 8;
 
 /* Прод-значения твиков (handoff TWEAKS.md). */
 export const TWEAKS = {

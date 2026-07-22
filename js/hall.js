@@ -8,10 +8,11 @@
    край в край). Верхний блок (шапка) и нижний (билеты+CTA) — оверлеи
    на слоях выше по z-index, схема уходит ПОД них и заполняет экран.
 
-   На мин-зуме (scale=1) зал вписан по БОЛЬШЕЙ стороне (cover): по одной
-   оси заполняет вьюпорт точно, по другой — выходит за края и кропится.
-   Для портретного вьюпорта это вертикаль: вся высота зала в кадре, бока
-   уходят за экран и панорамируются. Зум до MAX_SCALE, свободный 2D-пан.
+   scale измеряется в долях cover-фита (scale=1 → cover). Нижний предел зума —
+   это ЗАГРУЗОЧНЫЙ (полный) вид: весь зал в кадре по МЕНЬШЕЙ стороне (contain),
+   что в единицах scale = contain/cover ≤ 1 (см. _fitScale). Отзумив до упора,
+   пользователь возвращается ровно к загрузочному виду. Зум до MAX_SCALE
+   (5× cover-фита), свободный 2D-пан.
 
    Состояние (scale, tx, ty): tx/ty — пан в экранных px (положительный tx —
    схема вправо, положительный ty — вниз). Пороги компактификации и
@@ -19,8 +20,12 @@
    состояния. ppu (px на SVG-юнит) = cover(vp) * scale.
    ============================================================ */
 
-const MIN_SCALE = 1;
 const MAX_SCALE = 5;
+
+/* Порог «тап vs drag»: если указатель за жест сместился меньше TAP_DIST px
+   (и уложился в TAP_TIME), это тап — выбор места, а не пан. */
+const TAP_DIST = 6;
+const TAP_TIME = 500;
 
 /* Базовый viewBox схемы (из assets/hall.svg): 0 0 536 442 */
 const BASE_W = 536;
@@ -32,15 +37,17 @@ const PAD = 24;
 
 export class HallViewport {
     /* opts: { compactionMode, onInteractStart, onInteractEnd,
-              topInset, bottomInset } — insets в экранных px (число|fn):
+              topInset, bottomInset, onTap } — insets в экранных px (число|fn):
        высоты оверлеев (шапка/нижний блок). На них расширяется пан-слэк,
-       чтобы крайние места можно было вывести из-под оверлея. */
+       чтобы крайние места можно было вывести из-под оверлея.
+       onTap(clientX, clientY) — вызывается на «тапе» (pointerdown→up без drag),
+       чтобы верхний слой сделал hit-test места и выбрал/снял его. */
     constructor(viewport, content, opts = {}) {
         this.vp = viewport;
         this.content = content;
         this.opts = Object.assign({ compactionMode: 'any' }, opts);
 
-        this.scale = 1;   // зум-фактор относительно cover-фита
+        this.scale = 1;   // зум-фактор относительно cover-фита (инициализируется fit'ом ниже)
         this.tx = 0;      // пан по X в экранных px
         this.ty = 0;      // пан по Y в экранных px
         this.notified = false;
@@ -48,12 +55,26 @@ export class HallViewport {
         this.drag = { active: false, startX: 0, startY: 0, baseTx: 0, baseTy: 0, pid: null };
         this.pinch = { active: false, baseDist: 0, baseScale: 1 };
         this.touchPan = { active: false, startX: 0, startY: 0, baseTx: 0, baseTy: 0 };
+        this._tap = null;   // { x, y, t } — старт последнего жеста (для tap-детекции)
         this._raf = null;
 
         this._bind();
+        // старт в загрузочном (полном) виде — это же нижний предел зума
+        this.scale = this._fitScale();
     }
 
     _svg() { return this.content.querySelector('svg'); }
+
+    /* Нижний предел зума = ЗАГРУЗОЧНЫЙ вид (весь зал в кадре, contain).
+       scale измеряется в долях cover-фита (scale=1 → cover). Полный вид =
+       contain-фит, что в этих единицах = contain/cover ≤ 1. Это и есть min. */
+    _fitScale() {
+        const VW = this.vp.clientWidth;
+        const VH = this.vp.clientHeight;
+        const cover = Math.max(VW / BASE_W, VH / BASE_H) || 1;
+        const contain = Math.min(VW / BASE_W, VH / BASE_H) || 1;
+        return contain / cover;
+    }
 
     _bind() {
         const vp = this.vp;
@@ -102,6 +123,7 @@ export class HallViewport {
 
     /* Выставить состояние и отрисовать через viewBox (мгновенно) */
     _apply(s, nx, ny) {
+        s = Math.max(this._fitScale(), Math.min(MAX_SCALE, s));
         const [cx, cy] = this._clampPan(nx, ny, s);
         this.scale = s;
         this.tx = cx;
@@ -155,7 +177,7 @@ export class HallViewport {
        зум-фактор = this.scale; порог зума > 1.001.
        пан-смещение this.tx/ty (экранные px); порог |·| > 0.5. */
     _shouldCompact() {
-        const zoomed = this.scale > 1.001;
+        const zoomed = this.scale > this._fitScale() * 1.001;
         const panned = Math.abs(this.tx) > 0.5 || Math.abs(this.ty) > 0.5;
         const mode = this.opts.compactionMode;
         if (mode === 'never') return false;
@@ -175,19 +197,19 @@ export class HallViewport {
     }
 
     reset() {
-        this._animateTo(1, 0, 0);
+        this._animateTo(this._fitScale(), 0, 0);
     }
 
     zoomBy(delta) {
         cancelAnimationFrame(this._raf);
-        const next = Math.max(MIN_SCALE, Math.min(MAX_SCALE, this.scale + delta));
+        const next = Math.max(this._fitScale(), Math.min(MAX_SCALE, this.scale + delta));
         this._animateTo(next, this.tx, this.ty);
     }
 
     /* Мгновенный зум (без твина) — для QA-проверок */
     zoomTo(s) {
         cancelAnimationFrame(this._raf);
-        this._apply(Math.max(MIN_SCALE, Math.min(MAX_SCALE, s)), this.tx, this.ty);
+        this._apply(Math.max(this._fitScale(), Math.min(MAX_SCALE, s)), this.tx, this.ty);
     }
 
     /* Мгновенный пан (с клампом) на текущем зуме — для QA-проверок */
@@ -196,11 +218,40 @@ export class HallViewport {
         this._apply(this.scale, tx, ty);
     }
 
+    /* Экранные координаты (clientX/clientY) → координаты в SVG-юнитах.
+       Через getScreenCTM инлайн-SVG (учитывает viewBox и позицию слоя),
+       поэтому работает при любом зуме/пане. null — если SVG ещё не в DOM. */
+    clientToSvg(clientX, clientY) {
+        const svg = this._svg();
+        if (!svg || !svg.getScreenCTM) return null;
+        const ctm = svg.getScreenCTM();
+        if (!ctm) return null;
+        const pt = svg.createSVGPoint();
+        pt.x = clientX;
+        pt.y = clientY;
+        const p = pt.matrixTransform(ctm.inverse());
+        return { x: p.x, y: p.y };
+    }
+
+    /* Центрировать вьюпорт на точке (px,py) в SVG-юнитах и приблизить к scale
+       (плавно, через тот же viewBox-твин). Пан выводится из условия «центр окна
+       viewBox = (px,py)»: cx = BASE_W/2 - tx/ppu = px  →  tx = (BASE_W/2 - px)*ppu.
+       Зум берём не меньше текущего (жест всегда приближает, не отдаляет). */
+    focusOnSvgPoint(px, py, scale) {
+        const { cover } = this._dims();
+        const s = Math.max(this.scale, this._fitScale(), Math.min(MAX_SCALE, scale));
+        const ppu = cover * s;
+        const tx = (BASE_W / 2 - px) * ppu;
+        const ty = (BASE_H / 2 - py) * ppu;
+        this._animateTo(s, tx, ty);
+    }
+
     /* ---- pointer (мышь): drag-пан ---- */
     _onPointerDown = (e) => {
         if (e.pointerType === 'touch') return; // тач — отдельно
         e.preventDefault();
         cancelAnimationFrame(this._raf);
+        this._tap = { x: e.clientX, y: e.clientY, t: performance.now() };
         this.drag = { active: true, startX: e.clientX, startY: e.clientY, baseTx: this.tx, baseTy: this.ty, pid: e.pointerId };
         try { this.vp.setPointerCapture(e.pointerId); } catch {}
         this.vp.classList.add('grabbing');
@@ -215,14 +266,27 @@ export class HallViewport {
         this.drag.active = false;
         this.vp.classList.remove('grabbing');
         try { this.vp.releasePointerCapture(e.pointerId); } catch {}
+        this._maybeTap(e.clientX, e.clientY);
     };
+
+    /* Если жест не превратился в пан (смещение < TAP_DIST, время < TAP_TIME) —
+       это тап: отдать координаты наверх для hit-test/выбора места. */
+    _maybeTap(clientX, clientY) {
+        const d = this._tap;
+        this._tap = null;
+        if (!d) return;
+        const moved = Math.hypot(clientX - d.x, clientY - d.y);
+        if (moved <= TAP_DIST && performance.now() - d.t <= TAP_TIME) {
+            this.opts.onTap && this.opts.onTap(clientX, clientY);
+        }
+    }
 
     /* ---- wheel: зум ---- */
     _onWheel = (e) => {
         e.preventDefault();
         cancelAnimationFrame(this._raf);
         const delta = -e.deltaY * 0.003;
-        const next = Math.max(MIN_SCALE, Math.min(MAX_SCALE, this.scale + delta));
+        const next = Math.max(this._fitScale(), Math.min(MAX_SCALE, this.scale + delta));
         this._apply(next, this.tx, this.ty);
     };
 
@@ -239,6 +303,7 @@ export class HallViewport {
             this.touchPan.active = false;
         } else if (e.touches.length === 1) {
             const t = e.touches[0];
+            this._tap = { x: t.clientX, y: t.clientY, t: performance.now() };
             this.touchPan = { active: true, startX: t.clientX, startY: t.clientY, baseTx: this.tx, baseTy: this.ty };
             this.pinch.active = false;
             this.vp.classList.add('grabbing');
@@ -250,7 +315,7 @@ export class HallViewport {
             const [a, b] = e.touches;
             const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
             const ratio = d / (this.pinch.baseDist || 1);
-            const next = Math.max(MIN_SCALE, Math.min(MAX_SCALE, this.pinch.baseScale * ratio));
+            const next = Math.max(this._fitScale(), Math.min(MAX_SCALE, this.pinch.baseScale * ratio));
             this._apply(next, this.tx, this.ty);
         } else if (this.touchPan.active && e.touches.length === 1) {
             e.preventDefault();
@@ -260,7 +325,14 @@ export class HallViewport {
             this._apply(this.scale, this.touchPan.baseTx + dx, this.touchPan.baseTy + dy);
         }
     };
-    _onTouchEnd = () => {
+    _onTouchEnd = (e) => {
+        // тап одним пальцем (без pinch): взять координаты отпущенного касания
+        if (!this.pinch.active && e && e.changedTouches && e.changedTouches.length) {
+            const t = e.changedTouches[0];
+            this._maybeTap(t.clientX, t.clientY);
+        } else {
+            this._tap = null;
+        }
         this.pinch.active = false;
         this.touchPan.active = false;
         this.vp.classList.remove('grabbing');
