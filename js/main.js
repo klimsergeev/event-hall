@@ -27,6 +27,7 @@ const legendEl = $('.legend');
 const subEl = $('.sub');
 const sliderEl = $('.slider');
 const ctaEl = $('.cta');
+const floatingEl = $('.floating');
 
 /* --- Заголовок / marquee --- */
 $('.ttl-inner').textContent = EVENT.title;
@@ -148,6 +149,9 @@ const hall = new HallViewport($('.map-viewport'), $('.map-content'), {
     compactionMode: TWEAKS.compactionMode,
     onInteractStart: () => applyCompact(true),
     onInteractEnd: () => applyCompact(false),
+    // высота нижнего плавающего блока — чтобы можно было допанорамировать
+    // низ схемы ВЫШЕ него (иначе нижние места остаются под оверлеем)
+    bottomInset: () => (floatingEl ? floatingEl.getBoundingClientRect().height : 0),
 });
 
 // стартовое центрирование активного чипа

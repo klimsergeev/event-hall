@@ -61,11 +61,23 @@ export class HallViewport {
         const RW = rect.width || vpw;
         const RH = rect.height || vph;
         const M = 40; // допуск, чтобы крайнее место входило в кадр с отступом
-        // Предел пана: дальний край схемы доходит до края вьюпорта (+M),
-        // без гигантского пустого поля за краем.
+        // Высота нижнего плавающего блока (билеты+CTA), перекрывающего низ схемы.
+        const inset = (typeof this.opts.bottomInset === 'function'
+            ? this.opts.bottomInset() : this.opts.bottomInset) || 0;
+
+        // Горизонталь: дальний край доходит до края вьюпорта (+M).
         const maxX = Math.max(0, (RW * s - vpw) / 2 + M);
-        const maxY = Math.max(0, (RH * s - vph) / 2 + M);
-        return [Math.max(-maxX, Math.min(maxX, nx)), Math.max(-maxY, Math.min(maxY, ny))];
+        // Вертикаль (асимметрично):
+        //  вниз (ny>0, открыть ВЕРХ) — верх вьюпорта свободен → обычный предел;
+        //  вверх (ny<0, открыть НИЗ) — расширяем на высоту оверлея, чтобы нижние
+        //  места поднялись ВЫШЕ плавающего блока (в свободную зону над ним).
+        const overV = (RH * s - vph) / 2;
+        const maxYdown = Math.max(0, overV + M);
+        const maxYup = Math.max(0, overV + M + inset);
+        return [
+            Math.max(-maxX, Math.min(maxX, nx)),
+            Math.max(-maxYup, Math.min(maxYdown, ny)),
+        ];
     }
 
     /* Выставить состояние и отрисовать через viewBox (мгновенно) */
