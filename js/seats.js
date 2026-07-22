@@ -14,14 +14,14 @@
    price/tier/status) — данные «привязаны к местам» прямо в DOM — и
    возвращает массив объектов-мест.
    ============================================================ */
-import { TIERS } from './data.js';
+import { TIER_COLORS } from './data.js';
 
 const OCCUPIED = '#BBC1C7';
 const SECTION_GAP = 40;   // разрыв по Y больше этого = граница секций
 const SECTIONS = ['Партер', 'Балкон'];
 
-/* цена по цвету (единый источник — TIERS) */
-const PRICE_BY_COLOR = new Map(TIERS.map((t) => [t.color.toUpperCase(), t.price]));
+/* множество цветов-тиров (цвета фиксированы, цены задаёт активный сеанс) */
+const TIER_SET = new Set(TIER_COLORS.map((c) => c.toUpperCase()));
 
 const norm = (c) => (c || '').toUpperCase();
 
@@ -68,24 +68,36 @@ export function buildSeats(svgRoot) {
             const seatNo = i + 1;
             const color = norm(r.getAttribute('fill'));
             const occupied = color === OCCUPIED;
-            const price = occupied ? null : (PRICE_BY_COLOR.get(color) ?? null);
-            const status = occupied ? 'occupied' : (price != null ? 'available' : 'unknown');
+            const available = !occupied && TIER_SET.has(color);
+            const status = occupied ? 'occupied' : (available ? 'available' : 'unknown');
 
-            // привязать данные к месту схемы (в DOM)
+            // привязать данные к месту схемы (в DOM). Цена НЕ ставится здесь —
+            // её задаёт активный сеанс (applySessionPrices), т.к. зал переоценивается.
             r.setAttribute('data-section', section);
             r.setAttribute('data-row', row);
             r.setAttribute('data-seat', seatNo);
             r.setAttribute('data-status', status);
-            if (price != null) {
-                r.setAttribute('data-price', price);
-                r.setAttribute('data-tier', color);
-            }
+            if (available) r.setAttribute('data-tier', color);
 
-            seats.push({ el: r, section, row, seat: seatNo, price, tier: price != null ? color : null, status, selected: false });
+            seats.push({ el: r, section, row, seat: seatNo, price: null, tier: available ? color : null, status, selected: false });
         });
     });
 
     return seats;
+}
+
+/* ============================================================
+   Переоценка зала под активный сеанс. priceByColor: Map(ЦВЕТ→цена).
+   Обновляет цену доступных мест (объект-место + data-price в DOM).
+   Цвета/статусы/геометрия не трогаются — меняются только цены. */
+export function applySessionPrices(seats, priceByColor) {
+    seats.forEach((s) => {
+        if (s.status !== 'available' || !s.tier) return;
+        const price = priceByColor.get(s.tier) ?? null;
+        s.price = price;
+        if (price != null) s.el.setAttribute('data-price', price);
+        else s.el.removeAttribute('data-price');
+    });
 }
 
 /* ============================================================

@@ -396,11 +396,12 @@ html, body {
     gap: 8px;               /* зазор между билетами */
     will-change: transform;
 }
-/* Карточка билета (Figma Ticket 4898-91317 Selected=False / 4898-91318 Selected=True).
+/* Карточка билета (Figma Ticket 4898-91317 Selected=False / 4899-43051 Selected=True).
    ДВА состояния одного компонента, обе — карточка шириной 231:
-     • неактивная (Selected=False): 231×52, радиус 26, бордер 1px, без тени,
-       строка места P3 14/21, отступы pl16/pr14, иконка × 24;
-     • активная  (Selected=True):  231×64, радиус 32, бордер 2px.
+     • неактивная (Selected=False): 231×52, радиус 16, бордер 1px, без тени,
+       строка места P3 14/21, отступы px 12, gap 16, иконка × 24;
+     • активная  (Selected=True):  231×64, радиус 16, бордер 2px, отступы px 16,
+       gap 24, строка места P2 16/24, иконка × 24.
    В КАРУСЕЛИ карточки лежат в ряд с зазором 8px (без перекрытия); активная едет
    в центр, соседи выглядывают краями (peek). Глубину (scale/opacity/z-index)
    правит JS покадрово. Без кругов/полосок. */
@@ -413,13 +414,13 @@ html, body {
     width: 231px;                         /* обе версии — одинаковая ширина */
     background: var(--ctrl-alternative);  /* white */
     border: 1px solid var(--bg-stroke);   /* Selected=False: бордер 1px, без тени */
-    border-radius: 26px;
+    border-radius: 16px;                  /* Figma 4898-91317: радиус 16 */
     height: 52px;
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding-left: 16px;                   /* Figma 4898-91317: pl 16 */
-    padding-right: 14px;                  /* Figma 4898-91317: pr 14 */
+    gap: 16px;                            /* Figma 4898-91317: gap 16 */
+    padding-left: 12px;                   /* Figma 4898-91317: px 12 */
+    padding-right: 12px;                  /* Figma 4898-91317: px 12 */
     box-shadow: none;
     overflow: hidden;
     cursor: grab;
@@ -432,17 +433,18 @@ html, body {
                 border-color 160ms ease-out;
 }
 .slider.grabbing .ticket { cursor: grabbing; }
-/* активная (Selected=True) — в этой задаче НЕ переверстывается: восстанавливаем
-   исходные значения активной (h64, радиус 32, бордер 2px, pl24/pr12), т.к.
-   Figma-правки Selected=False на базовом .ticket иначе протекли бы на активную */
+/* активная (Selected=True, Figma 4899-43051): h64, радиус 16, бордер 2px,
+   px 16, gap 24. Оверрайдим базовый .ticket, чтобы правки Selected=False
+   не протекали на активную. */
 .ticket.active {
     height: 64px;
-    border-radius: 32px;
+    border-radius: 16px;                  /* Figma 4899-43051: радиус 16 */
     border-width: 2px;
     border-color: var(--bg-stroke);
     box-shadow: none;
-    padding-left: 24px;
-    padding-right: 12px;
+    gap: 24px;                            /* Figma 4899-43051: gap 24 */
+    padding-left: 16px;                   /* Figma 4899-43051: px 16 */
+    padding-right: 16px;                  /* Figma 4899-43051: px 16 */
 }
 .ticket .t-text {
     flex: 0 0 auto;
@@ -465,8 +467,8 @@ html, body {
 }
 .ticket .t-x {
     flex: 0 0 auto;
-    margin-left: auto;                    /* × — последний элемент, прижат к правому краю (Figma pr-14) */
-    width: 24px;                          /* Figma 4898-91317: иконка 24 */
+    margin-left: auto;                    /* × — последний элемент, прижат к правому краю (padding-right) */
+    width: 24px;                          /* Figma: иконка 24 у обоих состояний */
     height: 24px;
     border: 0;
     background: transparent;
@@ -478,11 +480,7 @@ html, body {
     justify-content: center;
     -webkit-tap-highlight-color: transparent;
 }
-.ticket .t-x svg { display: block; width: 24px; height: 24px; }   /* Selected=False: иконка 24 */
-/* активная (Selected=True) по Figma 4899-43051: icon box 32 → tap-таргет 32,
-   глиф × 32 (видимые штрихи 16px = 50% viewBox), pr 12 (задан в .ticket.active выше) */
-.ticket.active .t-x { width: 32px; height: 32px; }
-.ticket.active .t-x svg { width: 32px; height: 32px; }
+.ticket .t-x svg { display: block; width: 24px; height: 24px; }   /* иконка × 24 у обоих (Figma + правка пользователя) */
 
 /* ---- 3.2 CTA ---- */
 .cta {

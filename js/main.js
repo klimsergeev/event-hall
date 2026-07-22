@@ -1,10 +1,10 @@
 /* ============================================================
    Точка входа: собирает экран, связывает пан/зум ↔ компакт ↔ marquee.
    ============================================================ */
-import { EVENT, SESSIONS, TIERS, MAX_SEATS, TWEAKS, formatPrice } from './data.js';
+import { EVENT, SESSIONS, sessionTiers, sessionMin, MAX_SEATS, TWEAKS, formatPrice } from './data.js';
 import { CompactTitle, centerActiveChip } from './header.js';
 import { HallViewport } from './hall.js';
-import { buildSeats, createSelectionLayer } from './seats.js';
+import { buildSeats, createSelectionLayer, applySessionPrices } from './seats.js';
 
 /* --- Иконки (инлайн SVG) --- */
 const icoChevronLeft =
@@ -58,7 +58,7 @@ function renderTabs() {
                 `<span class="dt">${s.date}</span>` +
                 `<span class="tm">${s.time}</span>` +
             `</span>` +
-            `<span class="tab-price">${s.from}</span>` +
+            `<span class="tab-price">от ${formatPrice(sessionMin(s))}</span>` +
             `<span class="tab-compact">` +
                 `<span class="date">${s.date}</span>` +
                 `<span class="sep"></span>` +
@@ -70,15 +70,30 @@ function renderTabs() {
     });
 }
 
-/* --- Рендер легенды --- */
+/* Активный сеанс (объект) и его карта цен по цвету (для переоценки зала). */
+function currentSession() {
+    return SESSIONS.find((s) => s.id === activeId) || SESSIONS[0];
+}
+function priceMapFor(session) {
+    return new Map(sessionTiers(session).map((t) => [t.color.toUpperCase(), t.price]));
+}
+
+/* --- Рендер легенды (цвет→цена АКТИВНОГО сеанса) --- */
 function renderLegend() {
     legendEl.innerHTML = '';
-    TIERS.forEach((t) => {
+    sessionTiers(currentSession()).forEach((t) => {
         const pill = document.createElement('span');
         pill.className = 'pill';
         pill.innerHTML = `<span class="sw" style="background:${t.color}"></span>${formatPrice(t.price)}`;
         legendEl.appendChild(pill);
     });
+}
+
+/* Переоценить зал под активный сеанс: цены мест (data-price) + легенда.
+   Вызывается на старте (после инъекции SVG) и при смене сеанса. */
+function repriceHall() {
+    if (seats.length) applySessionPrices(seats, priceMapFor(currentSession()));
+    renderLegend();
 }
 
 /* --- Корзина: выбранные места. Наполняется кликами по схеме, стартует ПУСТОЙ.
@@ -390,6 +405,8 @@ function setActive(id) {
     Object.entries(chipEls).forEach(([k, el]) => el.classList.toggle('active', k === id));
     const s = SESSIONS.find((x) => x.id === id) || SESSIONS[0];
     subEl.textContent = s.venue;
+    // зал переоценивается под сеанс: цены мест + легенда
+    repriceHall();
 }
 function onChipChange(id) {
     setActive(id);
@@ -435,6 +452,8 @@ function injectHall() {
             seats = buildSeats(svgEl);
             // слой selected-отметок поверх мест (оранжевый + галочка)
             renderSelection = createSelectionLayer(svgEl);
+            // переоценить зал под активный сеанс (цены мест + легенда)
+            repriceHall();
             window.__seats = seats;   // QA-хук: доступ к модели из консоли
         })
         .catch((e) => console.error('hall.svg load failed', e));
@@ -456,6 +475,11 @@ const hall = new HallViewport($('.map-viewport'), $('.map-content'), {
     // чтобы верхние/нижние места можно было вывести ИЗ-ПОД оверлеев
     topInset: () => (header ? header.getBoundingClientRect().height : 0),
     bottomInset: () => (floatingEl ? floatingEl.getBoundingClientRect().height : 0),
+    // Оффсет покоя: при ПУСТОЙ корзине (загрузка — снизу нет кнопки) опускаем
+    // вписанную схему на половину высоты развёрнутой шапки, чтобы вертикальный
+    // воздух распределился симметрично, а не сваливался весь вниз. Есть билеты
+    // (кнопка снизу) → 0 → композиция как раньше.
+    restOffsetY: () => (cart.length === 0 && header ? header.getBoundingClientRect().height / 2 : 0),
     // тап по схеме (не пан) → выбрать/снять место под указателем
     onTap: (cx, cy) => handleTap(cx, cy),
 });

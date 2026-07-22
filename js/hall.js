@@ -61,6 +61,18 @@ export class HallViewport {
         this._bind();
         // старт в загрузочном (полном) виде — это же нижний предел зума
         this.scale = this._fitScale();
+        // ...опущенный на оффсет покоя (баланс леттербокса под развёрнутой шапкой)
+        this.ty = this._restY();
+    }
+
+    /* Вертикальный оффсет ПОКОЯ (экранные px): в состоянии загрузки/покоя
+       вписанная схема опускается на restOffsetY, чтобы вертикальный леттербокс
+       распределился симметрично (шапка сверху перекрывает верхний зазор, иначе
+       весь пустой воздух сваливается вниз). Значение (обычно половина высоты
+       развёрнутой шапки) задаётся снаружи и клампится в пан-границы текущего
+       зума. При непустой корзине оффсет = 0 → композиция как прежде. */
+    _restY() {
+        return this._clampPan(0, this._inset('restOffsetY'), this.scale)[1];
     }
 
     _svg() { return this.content.querySelector('svg'); }
@@ -178,7 +190,9 @@ export class HallViewport {
        пан-смещение this.tx/ty (экранные px); порог |·| > 0.5. */
     _shouldCompact() {
         const zoomed = this.scale > this._fitScale() * 1.001;
-        const panned = Math.abs(this.tx) > 0.5 || Math.abs(this.ty) > 0.5;
+        // пан меряем ОТНОСИТЕЛЬНО оффсета покоя: оффсет сам по себе — не «пан»,
+        // иначе загрузочное опускание схемы схлопывало бы шапку.
+        const panned = Math.abs(this.tx) > 0.5 || Math.abs(this.ty - this._restY()) > 0.5;
         const mode = this.opts.compactionMode;
         if (mode === 'never') return false;
         if (mode === 'zoom-only') return zoomed;
@@ -197,7 +211,7 @@ export class HallViewport {
     }
 
     reset() {
-        this._animateTo(this._fitScale(), 0, 0);
+        this._animateTo(this._fitScale(), 0, this._restY());
     }
 
     zoomBy(delta) {
