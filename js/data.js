@@ -36,8 +36,8 @@ export const TIERS = [
 /* Выбранные места (Figma слайдер билетов 4902:80253). */
 export const TICKETS = [
     { seat: '94', row: '9', price: '3 500 ₽' },
-    { seat: '96', row: '9', price: '3 500 ₽' },
     { seat: '95', row: '9', price: '3 500 ₽' },
+    { seat: '96', row: '9', price: '3 500 ₽' },
 ];
 
 /* Итог CTA (Figma 4902:80257). */

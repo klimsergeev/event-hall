@@ -372,39 +372,53 @@ html, body {
 }
 .floating > * { pointer-events: auto; }
 
-/* ---- 3.1 Слайдер выбранных мест ---- */
+/* ---- 3.1 Галерея выбранных мест (drag-переключение активной, без анимации) ---- */
 .slider {
     position: relative;
-    height: 52px;
-    width: 100%;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
     isolation: isolate;
+    pointer-events: none;   /* драг ловят сами карточки; пустоты пропускают пан схемы */
+    touch-action: none;
 }
 .ticket {
-    position: absolute;
-    top: 0;
+    pointer-events: auto;
+    touch-action: none;
+    box-sizing: border-box;
+    flex: 0 0 auto;
     background: var(--ctrl-alternative);  /* white */
+    border: 2px solid transparent;
     border-radius: 26px;
+    height: 52px;
     display: flex;
     align-items: center;
     gap: 16px;
     padding-left: 24px;
     padding-right: 12px;
-    height: 52px;
     box-shadow: var(--shadow-low);
     overflow: hidden;
+    cursor: grab;
+    user-select: none;
+    z-index: 1;
 }
-/* геометрия перекрытия — из Figma (slider 328: 0/65.5/127, ширины 205/201/201) */
-.ticket.front { left: 0;        width: 205px; z-index: 3; }
-.ticket.mid   { right: 61.5px;  width: 201px; z-index: 2; }
-.ticket.back  { right: 0;       width: 201px; z-index: 1; }
-.ticket.front {
-    top: -6px;
+.ticket + .ticket { margin-left: -16px; }   /* лёгкое перекрытие, как в референсе */
+.slider.grabbing .ticket { cursor: grabbing; }
+/* активная — развёрнута на всю ширину контента */
+.ticket.active {
     height: 64px;
     border-radius: 32px;
-    border: 2px solid var(--bg-stroke);
+    border-color: var(--bg-stroke);
     box-shadow: none;
+    z-index: 3;
+    justify-content: flex-start;
 }
+/* свёрнутая — узкий чип; контент клипается overflow:hidden */
+.ticket.collapsed.before { width: 70px; justify-content: flex-start; } /* видно «94 ме» + цену */
+.ticket.collapsed.after  { width: 52px; justify-content: flex-end; }   /* видно только × */
 .ticket .t-text {
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     justify-content: center;

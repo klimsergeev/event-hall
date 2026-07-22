@@ -77,21 +77,69 @@ function renderLegend() {
     });
 }
 
-/* --- Рендер билетов (перекрывающиеся карточки) --- */
+/* --- Галерея билетов: карточки строятся ОДИН раз, активная переключается
+       классами (без пересборки DOM), drag по горизонтали снапит к соседней --- */
+let activeTicket = 0;
+const ticketEls = [];
+let tDrag = null;                 // { startX, startActive, pid }
+const TICKET_STEP = 64;           // px перетаскивания на одну карточку
+
 function renderTickets() {
     sliderEl.innerHTML = '';
-    const pos = ['front', 'mid', 'back'];
+    ticketEls.length = 0;
     TICKETS.forEach((tk, i) => {
         const card = document.createElement('div');
-        card.className = 'ticket ' + (pos[i] || 'back');
+        card.className = 'ticket';
         card.innerHTML =
             `<span class="t-text">` +
                 `<span class="t-seat">${tk.seat} место, ${tk.row} ряд</span>` +
                 `<span class="t-price">${tk.price}</span>` +
             `</span>` +
             `<button class="t-x" type="button" aria-label="Убрать">${icoCross}</button>`;
+        card.addEventListener('pointerdown', (e) => onTicketDown(e, card));
+        card.addEventListener('pointermove', onTicketMove);
+        card.addEventListener('pointerup', onTicketUp);
+        card.addEventListener('pointercancel', onTicketUp);
+        ticketEls.push(card);
         sliderEl.appendChild(card);
     });
+    layoutTickets();
+}
+
+/* Разложить карточки под текущий activeTicket (снап-состояние, без анимации) */
+function layoutTickets() {
+    ticketEls.forEach((el, i) => {
+        el.classList.toggle('active', i === activeTicket);
+        el.classList.toggle('collapsed', i !== activeTicket);
+        el.classList.toggle('before', i < activeTicket);   // свёрнута слева → видно начало
+        el.classList.toggle('after', i > activeTicket);     // свёрнута справа → видно ×
+    });
+}
+
+function setActiveTicket(i) {
+    const n = Math.max(0, Math.min(TICKETS.length - 1, i));
+    if (n === activeTicket) return;
+    activeTicket = n;
+    layoutTickets();
+}
+
+/* drag по карточкам → переключение активной; drag по пустоте → пан схемы (карта) */
+function onTicketDown(e, el) {
+    tDrag = { startX: e.clientX, startActive: activeTicket, pid: e.pointerId };
+    try { el.setPointerCapture(e.pointerId); } catch {}
+    sliderEl.classList.add('grabbing');
+    e.preventDefault();
+}
+function onTicketMove(e) {
+    if (!tDrag || e.pointerId !== tDrag.pid) return;
+    const dx = e.clientX - tDrag.startX;
+    // тащим влево (dx<0) → следующая карточка; снап к ближайшей
+    setActiveTicket(tDrag.startActive + Math.round(-dx / TICKET_STEP));
+}
+function onTicketUp(e) {
+    if (!tDrag || e.pointerId !== tDrag.pid) return;
+    tDrag = null;
+    sliderEl.classList.remove('grabbing');
 }
 
 /* --- CTA --- */
@@ -159,6 +207,17 @@ centerActiveChip(scroller, chipEls[activeId]);
 
 // QA-хук: #compact — форсировать компактный режим (без взаимодействия)
 if (location.hash === '#compact') applyCompact(true);
+// QA-хуки: #t0/#t1/#t2 — форсировать активный билет (проверка 3 состояний галереи)
+if (location.hash === '#t1') setActiveTicket(1);
+if (location.hash === '#t2') setActiveTicket(2);
+// QA-хук: #drag — синтетический drag первой карточки влево (проверка pipeline pointer)
+if (location.hash === '#drag') {
+    const el = ticketEls[0];
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const P = (type, x) => el.dispatchEvent(new PointerEvent(type, { pointerId: 1, clientX: x, clientY: cy, bubbles: true }));
+    P('pointerdown', cx); P('pointermove', cx - 130); P('pointerup', cx - 130);
+}
 // QA-хуки (после инъекции SVG): #zoom, #edgeL/#edgeR/#edgeT/#edgeB — зум+пан к краю
 hallReady.then(() => {
     const h = location.hash;
