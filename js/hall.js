@@ -18,7 +18,7 @@ const BASE_W = 536;
 const BASE_H = 442;
 
 export class HallViewport {
-    /* opts: { compactionMode, onInteractStart, onInteractEnd, onScaleShow } */
+    /* opts: { compactionMode, onInteractStart, onInteractEnd } */
     constructor(viewport, content, opts = {}) {
         this.vp = viewport;
         this.content = content;
@@ -32,7 +32,6 @@ export class HallViewport {
         this.drag = { active: false, startX: 0, startY: 0, baseTx: 0, baseTy: 0, pid: null };
         this.pinch = { active: false, baseDist: 0, baseScale: 1 };
         this.touchPan = { active: false, startX: 0, startY: 0, baseTx: 0, baseTy: 0 };
-        this._hideT = null;
         this._raf = null;
 
         this._bind();
@@ -68,14 +67,6 @@ export class HallViewport {
         this.tx = cx;
         this.ty = cy;
         this._renderViewBox();
-
-        // индикатор масштаба
-        if (this.opts.onScaleShow) this.opts.onScaleShow(s, this._interacted());
-        clearTimeout(this._hideT);
-        this._hideT = setTimeout(() => {
-            if (this.opts.onScaleShow) this.opts.onScaleShow(this.scale, false);
-        }, 900);
-
         this._checkCompact();
     }
 
@@ -118,12 +109,6 @@ export class HallViewport {
             if (p < 1) this._raf = requestAnimationFrame(step);
         };
         this._raf = requestAnimationFrame(step);
-    }
-
-    _interacted() {
-        const zoomed = this.scale > 1.001;
-        const panned = Math.abs(this.tx) > 0.5 || Math.abs(this.ty) > 0.5;
-        return zoomed || panned;
     }
 
     /* Пороги компактификации (эквивалентны прежним):

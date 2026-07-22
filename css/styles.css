@@ -352,24 +352,6 @@ html, body {
     pointer-events: none;
 }
 
-/* индикатор масштаба */
-.scale-badge {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    padding: 4px 10px;
-    border-radius: 999px;
-    background: var(--bg-inverted);
-    color: var(--text-inverted);
-    font: 500 12px/16px var(--font-sans);
-    opacity: 0;
-    transform: translateY(-4px);
-    transition: opacity 160ms ease-out, transform 160ms ease-out;
-    pointer-events: none;
-    z-index: 2;
-}
-.scale-badge.show { opacity: 1; transform: translateY(0); }
-
 /* ============================================================
    3. Нижний блок — билеты + CTA
    ============================================================ */

@@ -128,13 +128,6 @@ function applyCompact(on) {
     centerActiveChip(scroller, chipEls[activeId]);
 }
 
-/* --- Индикатор масштаба --- */
-const badge = $('.scale-badge');
-function onScaleShow(scale, show) {
-    badge.textContent = scale.toFixed(1) + '×';
-    badge.classList.toggle('show', show);
-}
-
 /* --- Инлайн-SVG схемы (вектор в DOM, чёткий на зуме) --- */
 function injectHall() {
     return fetch('assets/hall.svg')
@@ -155,7 +148,6 @@ const hall = new HallViewport($('.map-viewport'), $('.map-content'), {
     compactionMode: TWEAKS.compactionMode,
     onInteractStart: () => applyCompact(true),
     onInteractEnd: () => applyCompact(false),
-    onScaleShow,
 });
 
 // стартовое центрирование активного чипа
