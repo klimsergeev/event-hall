@@ -4,27 +4,43 @@
    перерисовывается растеризатором на каждом уровне — без текстурного
    мыла), а НЕ через CSS transform: scale() на промоутнутом слое.
 
-   Внутреннее состояние сохранено как (scale, tx, ty) — те же семантики,
-   что и в прежней transform-версии, поэтому пороги компактификации и
-   обработчики жестов идентичны прежним. viewBox выводится из состояния.
-   Порт логики из handoff/prototype-full.jsx (SeatViewport).
+   МОДЕЛЬ COVER: схема — слой на ВЕСЬ вьюпорт (полная ширина И высота,
+   край в край). Верхний блок (шапка) и нижний (билеты+CTA) — оверлеи
+   на слоях выше по z-index, схема уходит ПОД них и заполняет экран.
+
+   На мин-зуме (scale=1) зал вписан по БОЛЬШЕЙ стороне (cover): по одной
+   оси заполняет вьюпорт точно, по другой — выходит за края и кропится.
+   Для портретного вьюпорта это вертикаль: вся высота зала в кадре, бока
+   уходят за экран и панорамируются. Зум до MAX_SCALE, свободный 2D-пан.
+
+   Состояние (scale, tx, ty): tx/ty — пан в экранных px (положительный tx —
+   схема вправо, положительный ty — вниз). Пороги компактификации и
+   обработчики жестов те же, что в прежней версии. viewBox выводится из
+   состояния. ppu (px на SVG-юнит) = cover(vp) * scale.
    ============================================================ */
 
 const MIN_SCALE = 1;
-const MAX_SCALE = 3.2;
+const MAX_SCALE = 5;
 
 /* Базовый viewBox схемы (из assets/hall.svg): 0 0 536 442 */
 const BASE_W = 536;
 const BASE_H = 442;
 
+/* Небольшой отступ клэмпа пана (экранные px): до крайних мест можно
+   доехать с этим зазором, но без гигантского пустого поля. */
+const PAD = 24;
+
 export class HallViewport {
-    /* opts: { compactionMode, onInteractStart, onInteractEnd } */
+    /* opts: { compactionMode, onInteractStart, onInteractEnd,
+              topInset, bottomInset } — insets в экранных px (число|fn):
+       высоты оверлеев (шапка/нижний блок). На них расширяется пан-слэк,
+       чтобы крайние места можно было вывести из-под оверлея. */
     constructor(viewport, content, opts = {}) {
         this.vp = viewport;
         this.content = content;
         this.opts = Object.assign({ compactionMode: 'any' }, opts);
 
-        this.scale = 1;   // зум-фактор = BASE_W / viewBox.width
+        this.scale = 1;   // зум-фактор относительно cover-фита
         this.tx = 0;      // пан по X в экранных px
         this.ty = 0;      // пан по Y в экранных px
         this.notified = false;
@@ -52,31 +68,35 @@ export class HallViewport {
         vp.addEventListener('dblclick', () => this.reset());
     }
 
-    _clampPan(nx, ny, s) {
-        const vpw = this.vp.clientWidth;
-        const vph = this.vp.clientHeight;
-        // Реальный отрисованный размер схемы (CSS-box в cover-режиме — обычно
-        // шире вьюпорта). Эффективный размер на экране при зуме = RW·s × RH·s.
-        const rect = this.content.getBoundingClientRect();
-        const RW = rect.width || vpw;
-        const RH = rect.height || vph;
-        const M = 40; // допуск, чтобы крайнее место входило в кадр с отступом
-        // Высота нижнего плавающего блока (билеты+CTA), перекрывающего низ схемы.
-        const inset = (typeof this.opts.bottomInset === 'function'
-            ? this.opts.bottomInset() : this.opts.bottomInset) || 0;
+    _inset(key) {
+        const v = this.opts[key];
+        const n = typeof v === 'function' ? v() : v;
+        return n || 0;
+    }
 
-        // Горизонталь: дальний край доходит до края вьюпорта (+M).
-        const maxX = Math.max(0, (RW * s - vpw) / 2 + M);
-        // Вертикаль (асимметрично):
-        //  вниз (ny>0, открыть ВЕРХ) — верх вьюпорта свободен → обычный предел;
-        //  вверх (ny<0, открыть НИЗ) — расширяем на высоту оверлея, чтобы нижние
-        //  места поднялись ВЫШЕ плавающего блока (в свободную зону над ним).
-        const overV = (RH * s - vph) / 2;
-        const maxYdown = Math.max(0, overV + M);
-        const maxYup = Math.max(0, overV + M + inset);
+    /* Размеры вьюпорта (px) и cover-фактор: px на SVG-юнит при scale=1.
+       cover = max(VW/BASE_W, VH/BASE_H) → по большей стороне зал заполняет
+       вьюпорт, по меньшей выходит за края (кропится, панорамируется). */
+    _dims() {
+        const VW = this.vp.clientWidth;
+        const VH = this.vp.clientHeight;
+        const cover = Math.max(VW / BASE_W, VH / BASE_H) || 1;
+        return { VW, VH, cover };
+    }
+
+    /* Клэмп пана: контент можно двигать так, чтобы любой его край доехал до
+       края вьюпорта + PAD; сверх того — слэк на высоту оверлеев (insetTop/
+       insetBottom), чтобы верхние/нижние места вывести из-под шапки/блока. */
+    _clampPan(nx, ny, s) {
+        const { VW, VH, cover } = this._dims();
+        const ppu = cover * s;
+        const Tx = Math.max(0, (BASE_W * ppu - VW) / 2) + PAD;
+        const Ty = Math.max(0, (BASE_H * ppu - VH) / 2) + PAD;
+        const insetTop = this._inset('topInset');
+        const insetBottom = this._inset('bottomInset');
         return [
-            Math.max(-maxX, Math.min(maxX, nx)),
-            Math.max(-maxYup, Math.min(maxYdown, ny)),
+            Math.max(-Tx, Math.min(Tx, nx)),
+            Math.max(-(Ty + insetBottom), Math.min(Ty + insetTop, ny)),
         ];
     }
 
@@ -91,25 +111,25 @@ export class HallViewport {
     }
 
     /* Вывести viewBox из (scale, tx, ty).
-       vw = BASE_W/s, vh = BASE_H/s;
-       vx = BASE_W/2·(s-1)/s − (BASE_W/(s·RW))·tx  (RW,RH — рендер-размер SVG в px)
-       vy = BASE_H/2·(s-1)/s − (BASE_H/(s·RH))·ty
-       При s=1, tx=ty=0 → "0 0 536 442" (покой). Вывод эквивалентен
-       прежнему transform: translate(tx,ty) scale(s) c origin=center. */
+       ppu = cover*scale; окно viewBox = VW/ppu × VH/ppu (аспект = аспекту
+       вьюпорта → SVG заполняет слой без леттербокса). Центр окна в
+       SVG-юнитах = центр зала минус пан/ppu. */
     _renderViewBox() {
         const svg = this._svg();
         if (!svg) return;
-        const rect = this.content.getBoundingClientRect();
-        const RW = rect.width;
-        const RH = rect.height;
-        if (RW <= 0 || RH <= 0) return;
+        const { VW, VH, cover } = this._dims();
+        if (VW <= 0 || VH <= 0) return;
+        const ppu = cover * this.scale;
+        const vw = VW / ppu;
+        const vh = VH / ppu;
+        const cx = BASE_W / 2 - this.tx / ppu;
+        const cy = BASE_H / 2 - this.ty / ppu;
+        svg.setAttribute('viewBox', `${cx - vw / 2} ${cy - vh / 2} ${vw} ${vh}`);
+    }
 
-        const s = this.scale;
-        const vw = BASE_W / s;
-        const vh = BASE_H / s;
-        const vx = (BASE_W / 2) * (s - 1) / s - (BASE_W / (s * RW)) * this.tx;
-        const vy = (BASE_H / 2) * (s - 1) / s - (BASE_H / (s * RH)) * this.ty;
-        svg.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`);
+    /* Пересчитать viewBox под текущее состояние (после resize). */
+    refit() {
+        this._apply(this.scale, this.tx, this.ty);
     }
 
     /* Плавный переход состояния (reset / кнопочный зум) — твин по rAF,
@@ -132,8 +152,8 @@ export class HallViewport {
     }
 
     /* Пороги компактификации (эквивалентны прежним):
-       зум-фактор = BASE_W / viewBox.width = this.scale;  порог зума > 1.001.
-       пан-смещение viewBox ↔ this.tx/ty (экранные px); порог |·| > 0.5. */
+       зум-фактор = this.scale; порог зума > 1.001.
+       пан-смещение this.tx/ty (экранные px); порог |·| > 0.5. */
     _shouldCompact() {
         const zoomed = this.scale > 1.001;
         const panned = Math.abs(this.tx) > 0.5 || Math.abs(this.ty) > 0.5;

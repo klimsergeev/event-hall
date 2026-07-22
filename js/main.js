@@ -201,31 +201,12 @@ function applyCompact(on) {
     centerActiveChip(scroller, chipEls[activeId]);
 }
 
-/* --- Contain-фит схемы: в покое (мин. зум) виден ВЕСЬ зал целиком ---
-   Считаем px-размеры коробки .map-content, вписывая аспект зала (536:442) в
-   доступную область: ширина вьюпорта × (высота МИНУС плавающий блок билетов).
-   Вписываем по меньшей стороне → ничего не обрезано, боковые ряды видны.
-   Нижний отступ (--floating-h) поднимает зал ВЫШЕ билетов → нижние ряды не
-   прячутся под ними. По вертикали может остаться свободное место (landscape
-   аспект зала) — это допустимо. В покое SVG рисует viewBox="0 0 536 442"
-   (весь зал), поэтому вся схема попадает в эту коробку целиком. */
-const HALL_ASPECT = 536 / 442;   // базовый viewBox схемы (assets/hall.svg)
+/* --- Пересчёт схемы под размеры вьюпорта ---
+   Схема — cover-слой на весь вьюпорт (см. hall.js). Коробка .map-content
+   заполняет вьюпорт через CSS (inset:0), JS лишь переприменяет viewBox под
+   текущее состояние (после resize/смены высоты оверлеев). */
 function fitHall() {
-    const floatingH = floatingEl ? floatingEl.getBoundingClientRect().height : 0;
-    document.documentElement.style.setProperty('--floating-h', floatingH + 'px');
-    const availW = mapViewportEl.clientWidth;
-    // clientHeight включает padding-bottom (= floatingH) → вычитаем его,
-    // получаем высоту области НАД плавающим блоком, куда центрируется схема.
-    const availH = mapViewportEl.clientHeight - floatingH;
-    if (availW <= 0 || availH <= 0) return;
-    let w = availW;
-    let h = w / HALL_ASPECT;
-    if (h > availH) {           // область шире аспекта → упираемся в высоту
-        h = availH;
-        w = h * HALL_ASPECT;
-    }
-    mapContentEl.style.width = w + 'px';
-    mapContentEl.style.height = h + 'px';
+    if (hall) hall.refit();
 }
 
 /* --- Инлайн-SVG схемы (вектор в DOM, чёткий на зуме) --- */
@@ -254,8 +235,9 @@ const hall = new HallViewport($('.map-viewport'), $('.map-content'), {
     compactionMode: TWEAKS.compactionMode,
     onInteractStart: () => applyCompact(true),
     onInteractEnd: () => applyCompact(false),
-    // высота нижнего плавающего блока — чтобы можно было допанорамировать
-    // низ схемы ВЫШЕ него (иначе нижние места остаются под оверлеем)
+    // высоты плавающих оверлеев (шапка / нижний блок) — расширяют пан-слэк,
+    // чтобы верхние/нижние места можно было вывести ИЗ-ПОД оверлеев
+    topInset: () => (header ? header.getBoundingClientRect().height : 0),
     bottomInset: () => (floatingEl ? floatingEl.getBoundingClientRect().height : 0),
 });
 
@@ -292,9 +274,9 @@ if (location.hash === '#drag') {
 hallReady.then(() => {
     const h = location.hash;
     const BIG = 99999;
-    if (h === '#zoom') hall.zoomTo(2.6);
-    if (h === '#edgeL') { hall.zoomTo(2.6); hall.panTo(BIG, 0); }
-    if (h === '#edgeR') { hall.zoomTo(2.6); hall.panTo(-BIG, 0); }
-    if (h === '#edgeT') { hall.zoomTo(2.6); hall.panTo(0, BIG); }
-    if (h === '#edgeB') { hall.zoomTo(2.6); hall.panTo(0, -BIG); }
+    if (h === '#zoom') hall.zoomTo(5);
+    if (h === '#edgeL') { hall.zoomTo(5); hall.panTo(BIG, 0); }
+    if (h === '#edgeR') { hall.zoomTo(5); hall.panTo(-BIG, 0); }
+    if (h === '#edgeT') { hall.zoomTo(5); hall.panTo(0, BIG); }
+    if (h === '#edgeB') { hall.zoomTo(5); hall.panTo(0, -BIG); }
 });

@@ -34,14 +34,19 @@ html, body {
 /* ============================================================
    1. Шапка
    ============================================================ */
+/* Шапка — ПЛАВАЮЩИЙ оверлей над схемой (как нижний блок): схема уходит ПОД
+   неё и заполняет весь вьюпорт. Абсолют сверху, непрозрачный фон. */
 .header {
-    position: relative;
-    z-index: 3;
-    flex: 0 0 auto;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
     background: var(--bg-primary);
     display: flex;
     flex-direction: column;
     gap: 16px;
+    padding-bottom: 8px;
 }
 
 /* ---- 1.1 Заголовок ---- */
@@ -314,41 +319,28 @@ html, body {
 /* ============================================================
    2. Схема зала (пан/зум)
    ============================================================ */
+/* Схема — слой на ВЕСЬ вьюпорт (край в край, полная ширина и высота),
+   абсолют inset:0, ПОД оверлеями (шапка z5, нижний блок z4). */
 .map-viewport {
-    position: relative;
-    flex: 1 1 auto;
-    min-height: 0;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
     overflow: hidden;
     background: var(--bg-primary);
     touch-action: none;
     cursor: grab;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    /* нижний отступ = высота плавающего блока (билеты+CTA), выставляется из JS.
-       Схема вписывается (contain) в область ВЫШЕ него → нижние ряды не под ним. */
-    padding-bottom: var(--floating-h, 0px);
 }
 .map-viewport.grabbing { cursor: grabbing; }
 .map-content {
-    /* CONTAIN (вписать ВЕСЬ зал): в покое (мин. зум) виден весь зал целиком —
-       боковые ряды и верх/низ не обрезаны. Коробка aspect-locked 536:442, её
-       точные px-размеры считает JS fitHall() под доступную область (ширина
-       вьюпорта × высота минус нижний плавающий блок), вписывая по меньшей
-       стороне. CSS ниже — фолбэк до первого расчёта.
-       Из-за landscape-аспекта зала по вертикали остаётся свободное место —
-       это допустимо (приоритет: весь зал в кадре). Аспект коробки = аспекту
-       viewBox 536:442 → математика зума через viewBox валидна.
-       Зум/пан идут через viewBox инлайн-SVG, а НЕ через CSS transform — здесь
-       НЕТ will-change/translateZ/transform, иначе слой промоутится в
-       GPU-текстуру и вектор мылит на зуме (композитинг). */
-    flex: 0 0 auto;
-    aspect-ratio: 536 / 442;
-    width: 100%;
-    height: auto;
-    max-height: 100%;
+    /* COVER: коробка заполняет весь вьюпорт; SVG внутри заполняет коробку.
+       Аспект окна viewBox = аспекту коробки (считает JS) → SVG заполняет слой
+       без леттербокса. Зум/пан идут через viewBox инлайн-SVG, а НЕ через CSS
+       transform — здесь НЕТ will-change/translateZ/transform, иначе слой
+       промоутится в GPU-текстуру и вектор мылит на зуме (композитинг). */
+    position: absolute;
+    inset: 0;
 }
-.map-content .hall-svg { display: block; height: 100%; }
+.map-content .hall-svg { display: block; width: 100%; height: 100%; }
 /* инлайн-SVG схемы: заполняет box; зум через viewBox → всегда вектор */
 .map-content .hall-svg svg {
     display: block;
