@@ -95,7 +95,7 @@ const TICKET_STEP = 64;           // px перетаскивания на одн
 function renderTickets() {
     sliderEl.innerHTML = '';
     ticketEls.length = 0;
-    cart.forEach((tk) => {
+    cart.forEach((tk, idx) => {
         const card = document.createElement('div');
         card.className = 'ticket';
         card.innerHTML =
@@ -108,10 +108,19 @@ function renderTickets() {
         card.addEventListener('pointermove', onTicketMove);
         card.addEventListener('pointerup', onTicketUp);
         card.addEventListener('pointercancel', onTicketUp);
-        // × — удалить билет; глушим pointerdown, чтобы кнопка не стартовала drag карточки
+        // × — удалить билет ТОЛЬКО если он активен; иначе первый клик делает
+        // билет активным (не удаляя), удаление — повторным кликом.
+        // глушим pointerdown, чтобы кнопка не стартовала drag карточки
         const xBtn = card.querySelector('.t-x');
         xBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
-        xBtn.addEventListener('click', (e) => { e.stopPropagation(); removeSeat(tk); });
+        xBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (idx === activeTicket) {
+                removeSeat(tk);
+            } else {
+                setActiveTicket(idx);
+            }
+        });
         ticketEls.push(card);
         sliderEl.appendChild(card);
     });
@@ -392,7 +401,9 @@ hallReady.then(() => {
     if (h === '#selmax') avail().slice(0, 9).forEach(addSeat);         // 9 попыток → в корзине 8 (макс)
     if (h === '#selgrey') tapSeat(occupied()[0]);                      // тап по серому → ничего (корзина пуста, CTA нет)
     if (h === '#seltoggle') { const s = avail()[0]; addSeat(s); tapSeat(s); }  // выбрать и снять → пусто
-    if (h === '#selx') { avail().slice(0, 2).forEach(addSeat); ticketEls[0].querySelector('.t-x').click(); }  // × первого билета → в корзине 1
+    if (h === '#selx') { avail().slice(0, 2).forEach(addSeat); const x = ticketEls[0].querySelector('.t-x'); x.click(); x.click(); }  // × неактивного первого билета: клик1 активирует, клик2 удаляет → в корзине 1
+    if (h === '#selxinactive') { avail().slice(0, 2).forEach(addSeat); ticketEls[0].querySelector('.t-x').click(); }  // × НЕактивного билета → только активируется, в корзине 2
+    if (h === '#selxactive') { avail().slice(0, 2).forEach(addSeat); ticketEls[activeTicket].querySelector('.t-x').click(); }  // × активного билета → удаляется, в корзине 1
     if (h === '#hittest') tapSeat(avail()[0]);                         // реальный тап выбирает место
     if (h === '#selchip') { avail().slice(0, 2).forEach(addSeat); onChipChange(SESSIONS[1].id); }  // смена чипа → корзина сброшена
 
