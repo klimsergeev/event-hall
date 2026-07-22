@@ -1,9 +1,10 @@
 /* ============================================================
    Точка входа: собирает экран, связывает пан/зум ↔ компакт ↔ marquee.
    ============================================================ */
-import { EVENT, SESSIONS, TIERS, TICKETS, CTA_TOTAL, TWEAKS } from './data.js';
+import { EVENT, SESSIONS, TIERS, TICKETS, CTA_TOTAL, TWEAKS, formatPrice } from './data.js';
 import { CompactTitle, centerActiveChip } from './header.js';
 import { HallViewport } from './hall.js';
+import { buildSeats } from './seats.js';
 
 /* --- Иконки (инлайн SVG) --- */
 const icoChevronLeft =
@@ -28,6 +29,8 @@ const subEl = $('.sub');
 const sliderEl = $('.slider');
 const ctaEl = $('.cta');
 const floatingEl = $('.floating');
+const mapViewportEl = $('.map-viewport');
+const mapContentEl = $('.map-content');
 
 /* --- Заголовок / marquee --- */
 $('.ttl-inner').textContent = EVENT.title;
@@ -72,7 +75,7 @@ function renderLegend() {
     TIERS.forEach((t) => {
         const pill = document.createElement('span');
         pill.className = 'pill';
-        pill.innerHTML = `<span class="sw" style="background:${t.color}"></span>${t.label}`;
+        pill.innerHTML = `<span class="sw" style="background:${t.color}"></span>${formatPrice(t.price)}`;
         legendEl.appendChild(pill);
     });
 }
@@ -104,17 +107,35 @@ function renderTickets() {
         sliderEl.appendChild(card);
     });
     layoutTickets();
+    sizeTicketOverlap();
+}
+
+/* Ширина карточки Ticket из Figma (4898-91318): обе версии — 231px. */
+const TICKET_W = 231;
+
+/* Перекрытие карточек вычисляется из ФАКТИЧЕСКОЙ ширины галереи.
+   Галерея (.slider) = ширине кнопки CTA (тот же padded-контейнер .floating),
+   т.е. ширина экрана минус 16px с каждой стороны. Чтобы N карточек легли
+   ТОЧНО в эту ширину с одинаковым перекрытием:
+       C + (N - 1) * visible = W  →  visible = (W - C) / (N - 1)
+   где C = 231 (ширина карточки), W = ширина галереи, N = число карточек.
+   visible — видимый край соседа; отрицательный margin = visible - C (одинаков
+   для всех пар). Правый край последней карточки попадает ровно на W. */
+function sizeTicketOverlap() {
+    const n = ticketEls.length;
+    if (n === 0) return;
+    const w = sliderEl.clientWidth;
+    const visible = n > 1 ? (w - TICKET_W) / (n - 1) : w;
+    sliderEl.style.setProperty('--ticket-step', visible + 'px');
 }
 
 /* Разложить карточки под текущий activeTicket (снап-состояние, без анимации).
-   z-index убывает с удалением от активной → активная сверху, соседи перекрыты:
-   те, что левее, показывают левый край (текст), правее — правый (×). */
+   Все карточки одинаковой ширины (231) и перекрыты (шаг --ticket-step); z-index
+   убывает с удалением от активной → активная сверху и развёрнута, соседи под ней:
+   те, что левее, выглядывают левым краем (номер+цена), правее — правым (×). */
 function layoutTickets() {
     ticketEls.forEach((el, i) => {
         el.classList.toggle('active', i === activeTicket);
-        el.classList.toggle('collapsed', i !== activeTicket);
-        el.classList.toggle('before', i < activeTicket);   // слева → полоска (текст)
-        el.classList.toggle('after', i > activeTicket);     // справа → круглый ×-чип
         el.style.zIndex = String(10 - Math.abs(i - activeTicket));
     });
 }
@@ -180,11 +201,44 @@ function applyCompact(on) {
     centerActiveChip(scroller, chipEls[activeId]);
 }
 
+/* --- Contain-фит схемы: в покое (мин. зум) виден ВЕСЬ зал целиком ---
+   Считаем px-размеры коробки .map-content, вписывая аспект зала (536:442) в
+   доступную область: ширина вьюпорта × (высота МИНУС плавающий блок билетов).
+   Вписываем по меньшей стороне → ничего не обрезано, боковые ряды видны.
+   Нижний отступ (--floating-h) поднимает зал ВЫШЕ билетов → нижние ряды не
+   прячутся под ними. По вертикали может остаться свободное место (landscape
+   аспект зала) — это допустимо. В покое SVG рисует viewBox="0 0 536 442"
+   (весь зал), поэтому вся схема попадает в эту коробку целиком. */
+const HALL_ASPECT = 536 / 442;   // базовый viewBox схемы (assets/hall.svg)
+function fitHall() {
+    const floatingH = floatingEl ? floatingEl.getBoundingClientRect().height : 0;
+    document.documentElement.style.setProperty('--floating-h', floatingH + 'px');
+    const availW = mapViewportEl.clientWidth;
+    // clientHeight включает padding-bottom (= floatingH) → вычитаем его,
+    // получаем высоту области НАД плавающим блоком, куда центрируется схема.
+    const availH = mapViewportEl.clientHeight - floatingH;
+    if (availW <= 0 || availH <= 0) return;
+    let w = availW;
+    let h = w / HALL_ASPECT;
+    if (h > availH) {           // область шире аспекта → упираемся в высоту
+        h = availH;
+        w = h * HALL_ASPECT;
+    }
+    mapContentEl.style.width = w + 'px';
+    mapContentEl.style.height = h + 'px';
+}
+
 /* --- Инлайн-SVG схемы (вектор в DOM, чёткий на зуме) --- */
+let seats = [];   // модель мест (ряд/место/цена/секция/статус), см. js/seats.js
 function injectHall() {
     return fetch('assets/hall.svg')
         .then((r) => r.text())
-        .then((svg) => { $('.hall-svg').innerHTML = svg; })
+        .then((svg) => {
+            $('.hall-svg').innerHTML = svg;
+            // привязать к местам схемы данные (ряд/место/цена) + разметить DOM
+            seats = buildSeats($('.hall-svg svg'));
+            window.__seats = seats;   // QA-хук: доступ к модели из консоли
+        })
         .catch((e) => console.error('hall.svg load failed', e));
 }
 
@@ -207,6 +261,19 @@ const hall = new HallViewport($('.map-viewport'), $('.map-content'), {
 
 // стартовое центрирование активного чипа
 centerActiveChip(scroller, chipEls[activeId]);
+
+// вписать всю схему в кадр (contain) сразу и после первого лейаута
+fitHall();
+requestAnimationFrame(fitHall);
+
+// пересчёт при смене размеров вьюпорта: перекрытие галереи + фит схемы,
+// затем переприменить viewBox под новые размеры коробки
+window.addEventListener('resize', () => {
+    sizeTicketOverlap();
+    fitHall();
+    hall.panTo(hall.tx, hall.ty);   // реклампинг + перерисовка viewBox
+});
+requestAnimationFrame(sizeTicketOverlap);   // добор после первого лейаута
 
 // QA-хук: #compact — форсировать компактный режим (без взаимодействия)
 if (location.hash === '#compact') applyCompact(true);

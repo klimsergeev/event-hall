@@ -323,24 +323,30 @@ html, body {
     touch-action: none;
     cursor: grab;
     display: flex;
-    align-items: stretch;
+    align-items: center;
     justify-content: center;
+    /* нижний отступ = высота плавающего блока (билеты+CTA), выставляется из JS.
+       Схема вписывается (contain) в область ВЫШЕ него → нижние ряды не под ним. */
+    padding-bottom: var(--floating-h, 0px);
 }
 .map-viewport.grabbing { cursor: grabbing; }
 .map-content {
-    /* COVER ПО ВЫСОТЕ: высота схемы = высоте области карты на ЛЮБОМ вьюпорте
-       (aspect-locked box: height 100% + aspect-ratio 536:442 → ширина по аспекту).
-       Ширина обычно > вьюпорта → боковые ряды уходят под край (overflow:hidden у
-       .map-viewport, центрирование justify-content:center). Так белого провала
-       снизу нет никогда, «Сцена» сверху области, аспект не искажён.
-       Зум/пан идут через viewBox инлайн-SVG (аспект box = аспекту viewBox 536:442,
-       поэтому математика зума валидна), а НЕ через CSS transform — здесь НЕТ
-       will-change/translateZ/transform, иначе слой промоутится в GPU-текстуру и
-       вектор мылит на зуме (композитинг). */
+    /* CONTAIN (вписать ВЕСЬ зал): в покое (мин. зум) виден весь зал целиком —
+       боковые ряды и верх/низ не обрезаны. Коробка aspect-locked 536:442, её
+       точные px-размеры считает JS fitHall() под доступную область (ширина
+       вьюпорта × высота минус нижний плавающий блок), вписывая по меньшей
+       стороне. CSS ниже — фолбэк до первого расчёта.
+       Из-за landscape-аспекта зала по вертикали остаётся свободное место —
+       это допустимо (приоритет: весь зал в кадре). Аспект коробки = аспекту
+       viewBox 536:442 → математика зума через viewBox валидна.
+       Зум/пан идут через viewBox инлайн-SVG, а НЕ через CSS transform — здесь
+       НЕТ will-change/translateZ/transform, иначе слой промоутится в
+       GPU-текстуру и вектор мылит на зуме (композитинг). */
     flex: 0 0 auto;
-    height: 100%;
-    width: auto;
     aspect-ratio: 536 / 442;
+    width: 100%;
+    height: auto;
+    max-height: 100%;
 }
 .map-content .hall-svg { display: block; height: 100%; }
 /* инлайн-SVG схемы: заполняет box; зум через viewBox → всегда вектор */
@@ -374,7 +380,14 @@ html, body {
 
 /* ---- 3.1 Галерея выбранных мест (drag-переключение активной, без анимации) ---- */
 .slider {
+    /* --ticket-step = видимый край соседней карточки (px). Значение
+       вычисляет JS из ФАКТИЧЕСКОЙ ширины галереи (= ширине кнопки CTA):
+       visible = (W - 231) / (N - 1), где W — ширина .slider, 231 — ширина
+       карточки, N — число карточек. Так N карточек ложатся ТОЧНО в ширину
+       галереи, перекрытие одинаковое. 86px — лишь фолбэк до расчёта. */
+    --ticket-step: 86px;
     position: relative;
+    width: 100%;            /* = ширина кнопки CTA (тот же padded-контейнер .floating) */
     height: 64px;
     display: flex;
     align-items: center;
@@ -383,14 +396,20 @@ html, body {
     pointer-events: none;   /* драг ловят сами карточки; пустоты пропускают пан схемы */
     touch-action: none;
 }
-/* Карточка билета (Figma tickets-gallery 4916-88407).
-   Активная — широкая пилюля; свёрнутые — ЧИПЫ: after = круглый ×-чип,
-   before = узкая полоска с номером+ценой (правый край уходит под активную). */
+/* Карточка билета (Figma Ticket 4898-91318 / tickets-gallery 4916-88407).
+   ДВА состояния одного компонента, обе — полноширинная карточка шириной 231:
+     • неактивная (Selected=False): 231×52, радиус 26, тень shadow-low;
+     • активная  (Selected=True):  231×64, радиус 32, бордер 2px, без тени.
+   Карточки одинаковой ширины лежат в ряд с ПЕРЕКРЫТИЕМ (шаг --ticket-step);
+   активная выше по z-index и перекрывает соседей → слева выглядывают левые
+   края (номер места + цена), справа — правые (×). Без кругов/полосок. */
 .ticket {
+    position: relative;                   /* z-index работает при перекрытии */
     pointer-events: auto;
     touch-action: none;
     box-sizing: border-box;
     flex: 0 0 auto;
+    width: 231px;                         /* обе версии — одинаковая ширина */
     background: var(--ctrl-alternative);  /* white */
     border: 2px solid transparent;
     border-radius: 26px;
@@ -406,30 +425,16 @@ html, body {
     user-select: none;
     white-space: nowrap;
 }
-.ticket + .ticket { margin-left: -16px; }   /* лёгкое перекрытие соседей */
+/* перекрытие: каждая следующая карточка сдвинута на шаг вправо от предыдущей */
+.ticket + .ticket { margin-left: calc(var(--ticket-step) - 231px); }
 .slider.grabbing .ticket { cursor: grabbing; }
-/* активная — развёрнута: h64, крупнее радиус, бордер вместо тени */
+/* активная (Selected=True) — развёрнута: h64, радиус 32, бордер вместо тени */
 .ticket.active {
     height: 64px;
     border-radius: 32px;
     border-color: var(--bg-stroke);
     box-shadow: none;
 }
-/* before — узкая полоска слева: номер + цена; × скрыт; правый край под активной */
-.ticket.collapsed.before {
-    width: 80px;
-    padding-right: 8px;
-}
-.ticket.collapsed.before .t-x { display: none; }
-/* after — круглый чип: ТОЛЬКО × по центру (диаметр = высоте карточки) */
-.ticket.collapsed.after {
-    width: 52px;
-    padding: 0;
-    gap: 0;
-    justify-content: center;
-    border-radius: 50%;
-}
-.ticket.collapsed.after .t-text { display: none; }
 .ticket .t-text {
     flex: 0 0 auto;
     display: flex;
@@ -447,6 +452,7 @@ html, body {
 }
 .ticket .t-x {
     flex: 0 0 auto;
+    margin-left: auto;                    /* × — последний элемент, прижат к правому краю (Figma pr-12) */
     width: 32px;
     height: 32px;
     border: 0;
