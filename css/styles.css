@@ -370,62 +370,79 @@ html, body {
 }
 .floating > * { pointer-events: auto; }
 
-/* ---- 3.1 Галерея выбранных мест (drag-переключение активной, без анимации) ---- */
+/* ---- 3.1 Галерея выбранных мест: КАРУСЕЛЬ (якорь активной зависит от позиции) ---- */
+/* .slider — вьюпорт карусели: overflow visible, чтобы соседние карточки выглядывали
+   краем (peek); финальный клип — на .app (max-width 416, hidden). Границы .slider
+   = границам CTA (тот же padded-контейнер .floating), поэтому активная карточка
+   выравнивается: первая — по левому краю, последняя — по правому, середина — по
+   центру галереи (сам расчёт сдвига трека — в js/main.js: anchorOffset/targetXFor). */
 .slider {
-    /* --ticket-step = видимый край соседней карточки (px). Значение
-       вычисляет JS из ФАКТИЧЕСКОЙ ширины галереи (= ширине кнопки CTA):
-       visible = (W - 231) / (N - 1), где W — ширина .slider, 231 — ширина
-       карточки, N — число карточек. Так N карточек ложатся ТОЧНО в ширину
-       галереи, перекрытие одинаковое. 86px — лишь фолбэк до расчёта. */
-    --ticket-step: 86px;
     position: relative;
     width: 100%;            /* = ширина кнопки CTA (тот же padded-контейнер .floating) */
     height: 64px;
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
+    overflow: visible;      /* соседи выглядывают краями (peek) */
     isolation: isolate;
     pointer-events: none;   /* драг ловят сами карточки; пустоты пропускают пан схемы */
     touch-action: none;
 }
-/* Карточка билета (Figma Ticket 4898-91318 / tickets-gallery 4916-88407).
-   ДВА состояния одного компонента, обе — полноширинная карточка шириной 231:
-     • неактивная (Selected=False): 231×52, радиус 26, тень shadow-low;
-     • активная  (Selected=True):  231×64, радиус 32, бордер 2px, без тени.
-   Карточки одинаковой ширины лежат в ряд с ПЕРЕКРЫТИЕМ (шаг --ticket-step);
-   активная выше по z-index и перекрывает соседей → слева выглядывают левые
-   края (номер места + цена), справа — правые (×). Без кругов/полосок. */
+/* Трек — абсолютная лента карточек, двигается по X (follow-the-finger + пружина) */
+.slider-track {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;               /* зазор между билетами */
+    will-change: transform;
+}
+/* Карточка билета (Figma Ticket 4898-91317 Selected=False / 4898-91318 Selected=True).
+   ДВА состояния одного компонента, обе — карточка шириной 231:
+     • неактивная (Selected=False): 231×52, радиус 26, бордер 1px, без тени,
+       строка места P3 14/21, отступы pl16/pr14, иконка × 24;
+     • активная  (Selected=True):  231×64, радиус 32, бордер 2px.
+   В КАРУСЕЛИ карточки лежат в ряд с зазором 8px (без перекрытия); активная едет
+   в центр, соседи выглядывают краями (peek). Глубину (scale/opacity/z-index)
+   правит JS покадрово. Без кругов/полосок. */
 .ticket {
-    position: relative;                   /* z-index работает при перекрытии */
+    position: relative;                   /* z-index для peek-глубины */
     pointer-events: auto;
     touch-action: none;
     box-sizing: border-box;
     flex: 0 0 auto;
     width: 231px;                         /* обе версии — одинаковая ширина */
     background: var(--ctrl-alternative);  /* white */
-    border: 2px solid transparent;
+    border: 1px solid var(--bg-stroke);   /* Selected=False: бордер 1px, без тени */
     border-radius: 26px;
     height: 52px;
     display: flex;
     align-items: center;
     gap: 16px;
-    padding-left: 24px;
-    padding-right: 12px;
-    box-shadow: var(--shadow-low);        /* shadow-low из Figma */
+    padding-left: 16px;                   /* Figma 4898-91317: pl 16 */
+    padding-right: 14px;                  /* Figma 4898-91317: pr 14 */
+    box-shadow: none;
     overflow: hidden;
     cursor: grab;
     user-select: none;
     white-space: nowrap;
+    /* плавный expand/collapse при смене активной; transform/opacity правит JS покадрово — их НЕ анимируем */
+    transition: height 260ms cubic-bezier(0.2, 0.9, 0.25, 1.15),
+                border-radius 260ms cubic-bezier(0.2, 0.9, 0.25, 1.15),
+                border-width 160ms ease-out,
+                border-color 160ms ease-out;
 }
-/* перекрытие: каждая следующая карточка сдвинута на шаг вправо от предыдущей */
-.ticket + .ticket { margin-left: calc(var(--ticket-step) - 231px); }
 .slider.grabbing .ticket { cursor: grabbing; }
-/* активная (Selected=True) — развёрнута: h64, радиус 32, бордер вместо тени */
+/* активная (Selected=True) — в этой задаче НЕ переверстывается: восстанавливаем
+   исходные значения активной (h64, радиус 32, бордер 2px, pl24/pr12), т.к.
+   Figma-правки Selected=False на базовом .ticket иначе протекли бы на активную */
 .ticket.active {
     height: 64px;
     border-radius: 32px;
+    border-width: 2px;
     border-color: var(--bg-stroke);
     box-shadow: none;
+    padding-left: 24px;
+    padding-right: 12px;
 }
 .ticket .t-text {
     flex: 0 0 auto;
@@ -435,8 +452,12 @@ html, body {
     white-space: nowrap;
 }
 .ticket .t-seat {
-    font: 400 var(--fs-p2)/var(--lh-p2) var(--font-sans);
+    font: 400 var(--fs-p3)/var(--lh-p3) var(--font-sans);   /* Selected=False (Figma 4898-91317): P3 14/21 */
     color: var(--text-primary);
+}
+/* активная (Selected=True) не переверстывается → исходный шрифт строки места P2 16/24 */
+.ticket.active .t-seat {
+    font: 400 var(--fs-p2)/var(--lh-p2) var(--font-sans);
 }
 .ticket .t-price {
     font: 400 var(--fs-p3)/var(--lh-p3) var(--font-sans);
@@ -444,9 +465,9 @@ html, body {
 }
 .ticket .t-x {
     flex: 0 0 auto;
-    margin-left: auto;                    /* × — последний элемент, прижат к правому краю (Figma pr-12) */
-    width: 32px;
-    height: 32px;
+    margin-left: auto;                    /* × — последний элемент, прижат к правому краю (Figma pr-14) */
+    width: 24px;                          /* Figma 4898-91317: иконка 24 */
+    height: 24px;
     border: 0;
     background: transparent;
     padding: 0;
@@ -457,6 +478,11 @@ html, body {
     justify-content: center;
     -webkit-tap-highlight-color: transparent;
 }
+.ticket .t-x svg { display: block; width: 24px; height: 24px; }   /* Selected=False: иконка 24 */
+/* активная (Selected=True) по Figma 4899-43051: icon box 32 → tap-таргет 32,
+   глиф × 32 (видимые штрихи 16px = 50% viewBox), pr 12 (задан в .ticket.active выше) */
+.ticket.active .t-x { width: 32px; height: 32px; }
+.ticket.active .t-x svg { width: 32px; height: 32px; }
 
 /* ---- 3.2 CTA ---- */
 .cta {

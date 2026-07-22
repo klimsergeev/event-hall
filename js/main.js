@@ -12,7 +12,7 @@ const icoChevronLeft =
 const icoChevronRight =
     '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5 L15 12 L9 19"/></svg>';
 const icoCross =
-    '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 5 L15 15 M15 5 L5 15"/></svg>';
+    '<svg width="24" height="24" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 5 L15 15 M15 5 L5 15"/></svg>';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -27,6 +27,7 @@ const scroller = $('.scroller', tabsWrap);
 const legendEl = $('.legend');
 const subEl = $('.sub');
 const sliderEl = $('.slider');
+const trackEl = $('.slider-track', sliderEl);
 const ctaEl = $('.cta');
 const floatingEl = $('.floating');
 const mapViewportEl = $('.map-viewport');
@@ -85,15 +86,129 @@ function renderLegend() {
        .seat/.row/.price/.selected. Максимум MAX_SEATS мест. --- */
 const cart = [];
 
-/* --- Галерея билетов: карточки строятся из cart, активная переключается
-       классами, drag по горизонтали снапит к соседней --- */
+/* --- Галерея билетов: КАРУСЕЛЬ. Карточки едут по горизонтали. Якорь активной
+       карточки зависит от её позиции в списке: первая → ЛЕВЫЙ край (peek справа),
+       последняя → ПРАВЫЙ край (peek слева), середина → ЦЕНТР (peek с обеих сторон).
+       Drag тянет трек ЗА ПАЛЬЦЕМ 1:1, по отпусканию — пружинный снап к ближайшей
+       карточке (учёт скорости флика). Активная = последний выбранный на схеме
+       билет; ручной свайп это переопределяет (активной становится ближайшая после
+       снапа). Анимация перенесена из anim/carousel.js. --- */
+const TICKET_W = 231;             // ширина карточки (обе версии), Figma 4898-91318
+const TICKET_GAP = 8;             // зазор между билетами
+const PITCH = TICKET_W + TICKET_GAP;   // шаг между центрами соседних карточек
+
 let activeTicket = 0;
 const ticketEls = [];
-let tDrag = null;                 // { startX, startActive, pid }
-const TICKET_STEP = 64;           // px перетаскивания на одну карточку
+let trackX = 0;                   // текущий сдвиг трека по X
+let stopSpring = null;            // отмена активной пружины
+
+/* пружина (velocity-based, rAF) — из anim/carousel.js */
+/* stiffness 840 (4× прежней 210 → ω вдвое выше → переход ~2× быстрее),
+   damping 44 → ζ≈0.76: лёгкий overshoot ~2.5% (еле заметный баунс) */
+function spring({ from, to, velocity = 0, stiffness = 840, damping = 44, mass = 1, onUpdate, onDone }) {
+    let x = from, v = velocity, last = performance.now(), raf;
+    const step = (now) => {
+        let dt = Math.min((now - last) / 1000, 1 / 30);
+        last = now;
+        const sub = Math.max(1, Math.ceil(dt / (1 / 240)));
+        const h = dt / sub;
+        for (let i = 0; i < sub; i++) {
+            const a = (-stiffness * (x - to) - damping * v) / mass;
+            v += a * h;
+            x += v * h;
+        }
+        onUpdate(x, v);
+        if (Math.abs(x - to) < 0.35 && Math.abs(v) < 0.35) {
+            onUpdate(to, 0);
+            onDone && onDone();
+            return;
+        }
+        raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+}
+
+/* Якорь активной карточки во вьюпорте зависит от её позиции в списке:
+     • первая (i=0)      → ЛЕВЫЙ край галереи (offset 0), peek справа;
+     • последняя (i=n-1) → ПРАВЫЙ край (offset = W - TICKET_W), peek слева;
+     • середина          → ЦЕНТР (offset = (W - TICKET_W) / 2), peek с обеих сторон.
+   Возвращает X левого края карточки i во вьюпорте в её «домашней» позиции. */
+function anchorOffset(i) {
+    const n = ticketEls.length;
+    if (i <= 0) return 0;                              // первая — левый край
+    const W = sliderEl.clientWidth;
+    if (i >= n - 1) return W - TICKET_W;               // последняя — правый край
+    return (W - TICKET_W) / 2;                         // середина — центр
+}
+
+/* позиция трека, при которой карточка i стоит в своём якоре (left/center/right) */
+function targetXFor(i) {
+    return anchorOffset(i) - i * PITCH;
+}
+
+/* индекс карточки, чья якорная позиция ближе всего к текущему сдвигу трека x */
+function nearestIndex(x) {
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < ticketEls.length; i++) {
+        const d = Math.abs(x - targetXFor(i));
+        if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+}
+
+function setTrackX(px) {
+    trackX = px;
+    trackEl.style.transform = `translateX(${px}px)`;
+    paintDepth();
+}
+
+/* глубина + active-состояние: активная (в своём якоре) — развёрнута
+   (Selected=True, h64), соседи свёрнуты (Selected=False, h52). Дистанцию
+   меряем от ЯКОРЯ активной карточки (левый/центр/правый), а не от левого края.
+   height/radius переключает класс active. Прозрачность НЕ трогаем — все карточки
+   полностью непрозрачны.
+   ВАЖНО: scale-глубину соседей УБРАЛИ. При scale вокруг центра карточка ужимается
+   к центру и её отрисованный край отходит от соседа → видимый зазор становится
+   больше layout-зазора (8px → ~17px у активной, ~26px между соседями). Чтобы
+   РЕАЛЬНЫЙ (после трансформа) зазор был ровно 8px = TICKET_GAP, ширина рендера
+   должна равняться layout-ширине, т.е. scale=1. Иерархию активной даёт разница
+   высот (h64 vs h52), а не scale. */
+function paintDepth() {
+    const anchor = anchorOffset(activeTicket);                // якорь активной во вьюпорте
+    ticketEls.forEach((el, i) => {
+        const cardLeft = trackX + i * PITCH;                  // левый край карточки i
+        const dist = Math.abs(cardLeft - anchor) / PITCH;     // 0 у активной, 1 у соседа
+        const t = Math.min(1, dist);
+        el.style.transform = 'none';                          // без scale → рендер-ширина = 231 → видимый зазор = 8px
+        el.style.zIndex = String(100 - Math.round(t * 10));   // peek-слои: активная поверх соседей
+        el.classList.toggle('active', i === activeTicket);
+    });
+}
+
+/* Снап пружиной: выровнять карточку i по левому краю (velocity — инерция флика) */
+function snapTo(i, velocity = 0) {
+    activeTicket = clamp(i, 0, ticketEls.length - 1);
+    if (stopSpring) { stopSpring(); stopSpring = null; }
+    stopSpring = spring({
+        from: trackX, to: targetXFor(activeTicket), velocity,
+        onUpdate: (x) => setTrackX(x),
+        onDone: () => { stopSpring = null; },
+    });
+}
+
+/* Внешний API для QA-хуков/× неактивного: сделать i активной и выровнять по левому */
+function setActiveTicket(i) {
+    snapTo(i);
+}
+
+/* Рецентрирование без анимации (resize) */
+function recenterTickets() {
+    if (ticketEls.length) setTrackX(targetXFor(activeTicket));
+}
 
 function renderTickets() {
-    sliderEl.innerHTML = '';
+    trackEl.innerHTML = '';
     ticketEls.length = 0;
     cart.forEach((tk, idx) => {
         const card = document.createElement('div');
@@ -108,8 +223,8 @@ function renderTickets() {
         card.addEventListener('pointermove', onTicketMove);
         card.addEventListener('pointerup', onTicketUp);
         card.addEventListener('pointercancel', onTicketUp);
-        // × — удалить билет ТОЛЬКО если он активен; иначе первый клик делает
-        // билет активным (не удаляя), удаление — повторным кликом.
+        // × — удалить билет ТОЛЬКО если он активен; иначе первый клик центрирует
+        // (делает активным), удаление — повторным кликом.
         // глушим pointerdown, чтобы кнопка не стартовала drag карточки
         const xBtn = card.querySelector('.t-x');
         xBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -122,69 +237,71 @@ function renderTickets() {
             }
         });
         ticketEls.push(card);
-        sliderEl.appendChild(card);
+        trackEl.appendChild(card);
     });
-    // клампим активную карточку в новые границы
-    activeTicket = Math.max(0, Math.min(cart.length - 1, activeTicket));
-    layoutTickets();
-    sizeTicketOverlap();
+    if (ticketEls.length === 0) { setTrackX(0); return; }
+    // клампим активную в новые границы и центрируем карусель на ней
+    activeTicket = clamp(activeTicket, 0, ticketEls.length - 1);
+    snapTo(activeTicket);
 }
 
-/* Ширина карточки Ticket из Figma (4898-91318): обе версии — 231px. */
-const TICKET_W = 231;
+/* --- drag галереи: тянем трек за пальцем 1:1, по отпусканию — снап/флик.
+       drag по карточке → карусель; drag по пустоте → пан схемы (не мешаем). --- */
+let tDrag = null;
+const TICKET_TAP = 8;             // px: движение меньше — это tap, а не drag
 
-/* Перекрытие карточек вычисляется из ФАКТИЧЕСКОЙ ширины галереи.
-   Галерея (.slider) = ширине кнопки CTA (тот же padded-контейнер .floating),
-   т.е. ширина экрана минус 16px с каждой стороны. Чтобы N карточек легли
-   ТОЧНО в эту ширину с одинаковым перекрытием:
-       C + (N - 1) * visible = W  →  visible = (W - C) / (N - 1)
-   где C = 231 (ширина карточки), W = ширина галереи, N = число карточек.
-   visible — видимый край соседа; отрицательный margin = visible - C (одинаков
-   для всех пар). Правый край последней карточки попадает ровно на W. */
-function sizeTicketOverlap() {
-    const n = ticketEls.length;
-    if (n === 0) return;
-    const w = sliderEl.clientWidth;
-    const visible = n > 1 ? (w - TICKET_W) / (n - 1) : w;
-    sliderEl.style.setProperty('--ticket-step', visible + 'px');
-}
-
-/* Разложить карточки под текущий activeTicket (снап-состояние, без анимации).
-   Все карточки одинаковой ширины (231) и перекрыты (шаг --ticket-step); z-index
-   убывает с удалением от активной → активная сверху и развёрнута, соседи под ней:
-   те, что левее, выглядывают левым краем (номер+цена), правее — правым (×). */
-function layoutTickets() {
-    ticketEls.forEach((el, i) => {
-        el.classList.toggle('active', i === activeTicket);
-        el.style.zIndex = String(10 - Math.abs(i - activeTicket));
-    });
-}
-
-function setActiveTicket(i) {
-    const n = Math.max(0, Math.min(cart.length - 1, i));
-    if (n === activeTicket) return;
-    activeTicket = n;
-    layoutTickets();
-}
-
-/* drag по карточкам → переключение активной; drag по пустоте → пан схемы (карта) */
 function onTicketDown(e, el) {
-    tDrag = { startX: e.clientX, startActive: activeTicket, pid: e.pointerId };
+    if (e.target.closest('.t-x')) return;
+    if (stopSpring) { stopSpring(); stopSpring = null; }
+    tDrag = {
+        startX: e.clientX, startY: e.clientY,
+        startTrack: trackX, pid: e.pointerId,
+        lastX: e.clientX, lastT: performance.now(), vx: 0,
+        index: ticketEls.indexOf(el),
+    };
     try { el.setPointerCapture(e.pointerId); } catch {}
     sliderEl.classList.add('grabbing');
     e.preventDefault();
 }
+
 function onTicketMove(e) {
     if (!tDrag || e.pointerId !== tDrag.pid) return;
-    const dx = e.clientX - tDrag.startX;
-    // тащим влево (dx<0) → следующая карточка; снап к ближайшей
-    setActiveTicket(tDrag.startActive + Math.round(-dx / TICKET_STEP));
+    const now = performance.now();
+    const dt = now - tDrag.lastT;
+    if (dt > 0) tDrag.vx = (e.clientX - tDrag.lastX) / dt * 1000;
+    tDrag.lastX = e.clientX;
+    tDrag.lastT = now;
+
+    let x = tDrag.startTrack + (e.clientX - tDrag.startX);   // follow-the-finger 1:1
+    // резина за краями
+    const min = targetXFor(ticketEls.length - 1);
+    const max = targetXFor(0);
+    if (x > max) x = max + (x - max) * 0.35;
+    if (x < min) x = min + (x - min) * 0.35;
+    setTrackX(x);
 }
+
 function onTicketUp(e) {
     if (!tDrag || e.pointerId !== tDrag.pid) return;
+    const d = tDrag;
     tDrag = null;
     sliderEl.classList.remove('grabbing');
+    const moved = Math.hypot(e.clientX - d.startX, e.clientY - d.startY);
+    if (moved < TICKET_TAP) {
+        // tap по НЕактивной карточке (любая её область) → активировать и центрировать
+        if (d.index !== -1 && d.index !== activeTicket) snapTo(d.index);
+        return;
+    }
+    // ручной свайп: ближайшая карточка (по её якорной позиции targetXFor —
+    // шаг неравномерный, т.к. на краях якорь меняется) + инерция флика
+    let nearest = nearestIndex(trackX);
+    if (Math.abs(d.vx) > 450) {                              // флик двигает на соседа
+        nearest = clamp(nearest + Math.sign(-d.vx), 0, ticketEls.length - 1);
+    }
+    snapTo(nearest, d.vx);
 }
+
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
 /* --- CTA: сумма = сумме цен выбранных мест. Пустая корзина → кнопки нет. --- */
 function renderCTA() {
@@ -196,8 +313,7 @@ function renderCTA() {
     const total = cart.reduce((acc, s) => acc + (s.price || 0), 0);
     ctaEl.style.display = '';
     ctaEl.innerHTML =
-        `<span>Оформить заказ на ${formatPrice(total)}</span>` +
-        `<span class="cta-ico">${icoChevronRight}</span>`;
+        `<span>Оформить: ${formatPrice(total)}</span>`;
 }
 
 /* --- Корзина ↔ схема: выбор/снятие мест --- */
@@ -237,7 +353,7 @@ function clearCart() {
 }
 
 /* Центрировать+приблизить схему к месту (центр rect'а = x+4, y+4 в SVG-юнитах) */
-const FOCUS_SCALE = 3;   // уровень приближения при выборе (место крупно + видны соседи)
+const FOCUS_SCALE = 1.8;   // уровень приближения при выборе (мягкий: место видно + видны соседи, без гипер-зума)
 function focusSeat(seat) {
     if (!hall) return;
     const x = +seat.el.getAttribute('x') + 4;
@@ -351,14 +467,14 @@ centerActiveChip(scroller, chipEls[activeId]);
 fitHall();
 requestAnimationFrame(fitHall);
 
-// пересчёт при смене размеров вьюпорта: перекрытие галереи + фит схемы,
+// пересчёт при смене размеров вьюпорта: рецентрирование карусели + фит схемы,
 // затем переприменить viewBox под новые размеры коробки
 window.addEventListener('resize', () => {
-    sizeTicketOverlap();
+    recenterTickets();
     fitHall();
     hall.panTo(hall.tx, hall.ty);   // реклампинг + перерисовка viewBox
 });
-requestAnimationFrame(sizeTicketOverlap);   // добор после первого лейаута
+requestAnimationFrame(recenterTickets);   // добор после первого лейаута
 
 // QA-хук: #compact — форсировать компактный режим (без взаимодействия)
 if (location.hash === '#compact') applyCompact(true);
@@ -403,9 +519,28 @@ hallReady.then(() => {
     if (h === '#seltoggle') { const s = avail()[0]; addSeat(s); tapSeat(s); }  // выбрать и снять → пусто
     if (h === '#selx') { avail().slice(0, 2).forEach(addSeat); const x = ticketEls[0].querySelector('.t-x'); x.click(); x.click(); }  // × неактивного первого билета: клик1 активирует, клик2 удаляет → в корзине 1
     if (h === '#selxinactive') { avail().slice(0, 2).forEach(addSeat); ticketEls[0].querySelector('.t-x').click(); }  // × НЕактивного билета → только активируется, в корзине 2
+    if (h === '#selbodyinactive') {  // tap по ТЕЛУ НЕактивного билета → активируется, в корзине 2
+        avail().slice(0, 2).forEach(addSeat);   // activeTicket = 1 (последний)
+        const el = ticketEls[0];                // билет 0 — НЕактивный
+        const r = el.getBoundingClientRect();
+        const cx = r.left + 20, cy = r.top + r.height / 2;   // тело карточки, не ×
+        const P = (type) => el.dispatchEvent(new PointerEvent(type, { pointerId: 3, clientX: cx, clientY: cy, bubbles: true }));
+        P('pointerdown'); P('pointerup');
+    }
     if (h === '#selxactive') { avail().slice(0, 2).forEach(addSeat); ticketEls[activeTicket].querySelector('.t-x').click(); }  // × активного билета → удаляется, в корзине 1
     if (h === '#hittest') tapSeat(avail()[0]);                         // реальный тап выбирает место
     if (h === '#selchip') { avail().slice(0, 2).forEach(addSeat); onChipChange(SESSIONS[1].id); }  // смена чипа → корзина сброшена
+
+    /* ---- QA-хуки якоря галереи (3 билета, активный k, без анимации) ---- */
+    const anchorTest = (k) => {
+        avail().slice(0, 3).forEach(addSeat);
+        if (stopSpring) { stopSpring(); stopSpring = null; }
+        activeTicket = k;
+        recenterTickets();                      // мгновенно в целевую позицию
+    };
+    if (h === '#anchorL') anchorTest(0);        // первый активен → влево, peek справа
+    if (h === '#anchorC') anchorTest(1);        // средний активен → центр, peek с обеих сторон
+    if (h === '#anchorR') anchorTest(2);        // последний активен → вправо, peek слева
 
     window.__cart = cart;                       // QA-доступ к корзине
     window.__addSeat = addSeat;                 // QA: программный выбор места
