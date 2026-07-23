@@ -265,6 +265,13 @@ export class HallViewport {
         this._animateTo(next, this.tx, this.ty);
     }
 
+    /* true, если схема на МИНИМАЛЬНОМ (загрузочном) масштабе — с тем же
+       допуском 1.001, что и порог компакта в _shouldCompact (защита от
+       накопленной погрешности cover/contain-фита). */
+    atMinScale() {
+        return this.scale <= this._fitScale() * 1.001;
+    }
+
     /* Мгновенный зум (без твина) — для QA-проверок */
     zoomTo(s) {
         cancelAnimationFrame(this._raf);

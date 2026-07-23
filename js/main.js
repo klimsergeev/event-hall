@@ -109,12 +109,17 @@ const cart = [];
        карточке (учёт скорости флика). Активная = последний выбранный на схеме
        билет; ручной свайп это переопределяет (активной становится ближайшая после
        снапа). Анимация перенесена из anim/carousel.js. --- */
-const TICKET_W = 231;             // ширина карточки (обе версии), Figma 4898-91318
-const TICKET_GAP = 8;             // зазор между билетами
-const PITCH = TICKET_W + TICKET_GAP;   // шаг между центрами соседних карточек
+/* Ширина карточек ПЕРЕМЕННАЯ (hug-content, Figma Hug у обоих состояний): неактивная
+   узкая, активная шире (крупнее шрифт/паддинги/gap + крестик). Поэтому шаг между
+   карточками (pitch) НЕ константа — геометрию карусели считаем по ФАКТИЧЕСКИМ
+   offsetWidth (см. measureCards): cardW[i] — ширина карточки i, cardStart[i] — X её
+   левого края внутри трека (кумулятивная сумма ширин + зазоров). */
+const TICKET_GAP = 8;             // зазор между билетами (Figma: gap в карусели)
 
 let activeTicket = 0;
 const ticketEls = [];
+let cardW = [];                   // фактическая ширина каждой карточки (offsetWidth)
+let cardStart = [];               // X левого края карточки i внутри трека (кумулятивно)
 let trackX = 0;                   // текущий сдвиг трека по X
 let stopSpring = null;            // отмена активной пружины
 let cardDX = [];                  // покадровый сдвиг каждой карточки по X (FLIP-реколл при удалении)
@@ -148,22 +153,48 @@ function spring({ from, to, velocity = 0, stiffness = 840, damping = 44, mass = 
     return () => cancelAnimationFrame(raf);
 }
 
+/* Проставить класс active по текущему activeTicket. Должно вызываться ПЕРЕД
+   measureCards при смене активной, т.к. активная карточка шире (hug) — её ширина
+   меняется мгновенно (без width-transition), и measureCards должен прочитать уже
+   финальные offsetWidth. */
+function applyActiveClass() {
+    ticketEls.forEach((el, i) => el.classList.toggle('active', i === activeTicket));
+}
+
+/* Замер фактических ширин карточек и кумулятивных X-позиций их левых краёв в треке.
+   cardStart[i] = сумма ширин карточек 0..i-1 + i зазоров (как во flex-раскладке с gap).
+   Читает offsetWidth (border-box, включает padding) — форсирует reflow, поэтому даёт
+   уже settled-значение (width не анимируем → без промежуточных кадров). */
+function measureCards() {
+    cardW = ticketEls.map((el) => el.offsetWidth);
+    cardStart = new Array(cardW.length);
+    let x = 0;
+    for (let i = 0; i < cardW.length; i++) {
+        cardStart[i] = x;
+        x += cardW[i] + TICKET_GAP;
+    }
+}
+
 /* Якорь активной карточки во вьюпорте зависит от её позиции в списке:
      • первая (i=0)      → ЛЕВЫЙ край галереи (offset 0), peek справа;
-     • последняя (i=n-1) → ПРАВЫЙ край (offset = W - TICKET_W), peek слева;
-     • середина          → ЦЕНТР (offset = (W - TICKET_W) / 2), peek с обеих сторон.
-   Возвращает X левого края карточки i во вьюпорте в её «домашней» позиции. */
+     • последняя (i=n-1) → ПРАВЫЙ край (offset = W - cardW[i]), peek слева;
+     • середина          → ЦЕНТР (offset = (W - cardW[i]) / 2), peek с обеих сторон.
+   Ширина карточки cardW[i] — фактическая (переменная), поэтому центрирование/якорение
+   учитывает реальную ширину именно этой карточки. Возвращает X левого края карточки i
+   во вьюпорте в её «домашней» позиции. */
 function anchorOffset(i) {
     const n = ticketEls.length;
     if (i <= 0) return 0;                              // первая — левый край
     const W = sliderEl.clientWidth;
-    if (i >= n - 1) return W - TICKET_W;               // последняя — правый край
-    return (W - TICKET_W) / 2;                         // середина — центр
+    const w = cardW[i] || 0;
+    if (i >= n - 1) return W - w;                      // последняя — правый край
+    return (W - w) / 2;                               // середина — центр
 }
 
-/* позиция трека, при которой карточка i стоит в своём якоре (left/center/right) */
+/* позиция трека, при которой карточка i стоит в своём якоре (left/center/right).
+   cardStart[i] — фактический левый край карточки в треке (сумма реальных ширин). */
 function targetXFor(i) {
-    return anchorOffset(i) - i * PITCH;
+    return anchorOffset(i) - (cardStart[i] || 0);
 }
 
 /* индекс карточки, чья якорная позиция ближе всего к текущему сдвигу трека x */
@@ -196,8 +227,9 @@ function setTrackX(px) {
 function paintDepth() {
     const anchor = anchorOffset(activeTicket);                // якорь активной во вьюпорте
     ticketEls.forEach((el, i) => {
-        const cardLeft = trackX + i * PITCH;                  // левый край карточки i
-        const dist = Math.abs(cardLeft - anchor) / PITCH;     // 0 у активной, 1 у соседа
+        const cardLeft = trackX + (cardStart[i] || 0);        // фактический левый край карточки i
+        const pitch = (cardW[i] || 0) + TICKET_GAP;           // локальный шаг (переменный)
+        const dist = pitch ? Math.abs(cardLeft - anchor) / pitch : 0;   // ~0 у активной, ~1 у соседа
         const t = Math.min(1, dist);
         // без scale → рендер-ширина = 231 → видимый зазор = 8px. cardDX[i]=0 в покое
         // (translateX(0) ≡ none); ненулевой — только во время FLIP-реколла соседей при удалении.
@@ -210,6 +242,10 @@ function paintDepth() {
 /* Снап пружиной: выровнять карточку i по левому краю (velocity — инерция флика) */
 function snapTo(i, velocity = 0) {
     activeTicket = clamp(i, 0, ticketEls.length - 1);
+    // новая активная карточка мгновенно разворачивается (шире) → сперва проставляем
+    // класс и перемеряем ширины, только потом считаем целевую позицию трека.
+    applyActiveClass();
+    measureCards();
     if (stopSpring) { stopSpring(); stopSpring = null; }
     stopSpring = spring({
         from: trackX, to: targetXFor(activeTicket), velocity,
@@ -226,7 +262,12 @@ function setActiveTicket(i) {
 /* Рецентрирование без анимации (resize) */
 function recenterTickets() {
     if (deleting) return;                         // не сбивать FLIP-реколл во время удаления
-    if (ticketEls.length) setTrackX(targetXFor(activeTicket));
+    if (!ticketEls.length) return;
+    // activeTicket мог быть выставлен извне (QA-хуки #anchorL/C/R) — актуализируем
+    // класс active и ширины перед расчётом целевой позиции.
+    applyActiveClass();
+    measureCards();
+    setTrackX(targetXFor(activeTicket));
 }
 
 function renderTickets(opts = {}) {
@@ -238,7 +279,7 @@ function renderTickets(opts = {}) {
         card.className = 'ticket';
         card.innerHTML =
             `<span class="t-text">` +
-                `<span class="t-seat">${tk.seat} место, ${tk.row} ряд</span>` +
+                `<span class="t-seat">${tk.row} ряд, ${tk.seat} место</span>` +
                 `<span class="t-price">${formatPrice(tk.price)}</span>` +
             `</span>` +
             `<button class="t-x" type="button" aria-label="Убрать">${icoCross}</button>`;
@@ -263,9 +304,13 @@ function renderTickets(opts = {}) {
         ticketEls.push(card);
         trackEl.appendChild(card);
     });
-    if (ticketEls.length === 0) { setTrackX(0); return; }
+    if (ticketEls.length === 0) { cardW = []; cardStart = []; setTrackX(0); return; }
     // клампим активную в новые границы и центрируем карусель на ней
     activeTicket = clamp(activeTicket, 0, ticketEls.length - 1);
+    // проставить active-класс и замерить фактические ширины ПЕРЕД расчётом позиций
+    // (активная карточка шире — hug); дальше геометрия считается по реальным ширинам.
+    applyActiveClass();
+    measureCards();
     // instant — мгновенно в целевую позицию (без пружины): нужно при удалении,
     // чтобы поверх мгновенного лейаута наложить FLIP-реколл соседей.
     if (opts.instant) setTrackX(targetXFor(activeTicket));
@@ -276,6 +321,20 @@ function renderTickets(opts = {}) {
        drag по карточке → карусель; drag по пустоте → пан схемы (не мешаем). --- */
 let tDrag = null;
 const TICKET_TAP = 8;             // px: движение меньше — это tap, а не drag
+/* Правая зона активного билета = крестик × (padding-right 12 + иконка 24 = 36px)
+   + комфортный буфер ~8px, суммарно 44px от ПРАВОГО края. Тап в этой зоне НЕ
+   зумит схему (× удаляет своим хендлером; буфер вокруг × — no-op, чтобы на
+   мобильном не промахнуться мимо удаления). Зона считается от r.right, поэтому
+   устойчива к hug-ширине активного билета. */
+const TICKET_X_ZONE = 44;
+
+/* Тап пришёлся в правую зону (× + буфер) активной карточки index? */
+function inTicketXZone(index, clientX) {
+    const el = ticketEls[index];
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return clientX >= r.right - TICKET_X_ZONE;
+}
 
 function onTicketDown(e, el) {
     if (deleting) return;
@@ -317,7 +376,15 @@ function onTicketUp(e) {
     const moved = Math.hypot(e.clientX - d.startX, e.clientY - d.startY);
     if (moved < TICKET_TAP) {
         // tap по НЕактивной карточке (любая её область) → активировать и центрировать
-        if (d.index !== -1 && d.index !== activeTicket) snapTo(d.index);
+        if (d.index !== -1 && d.index !== activeTicket) { snapTo(d.index); return; }
+        // tap по АКТИВНОЙ карточке ВНЕ зоны ×+буфер → подзум схемы на место этого
+        // билета (тот же зум/центрирование, что при выборе места на схеме).
+        // Место НЕ удаляется, корзина/активность не меняются. В зоне ×+буфер — no-op
+        // (сам × удаляет своим click-хендлером; его pointerdown не стартует tDrag).
+        if (d.index === activeTicket && !inTicketXZone(d.index, e.clientX)) {
+            const seat = cart[d.index];
+            if (seat) focusSeat(seat);
+        }
         return;
     }
     // ручной свайп: ближайшая карточка (по её якорной позиции targetXFor —
@@ -486,10 +553,18 @@ function handleTap(clientX, clientY) {
     const p = hall.clientToSvg(clientX, clientY);
     if (!p) return;
     const seat = findNearestSeat(p.x, p.y, 8);   // R=8 SVG-юнитов (место 8 + зазор)
-    if (!seat) return;
-    if (seat.status !== 'available') return;      // серое место — не выбирается
-    if (seat.selected) { removeSeat(seat); return; }   // повторный тап — снять
-    addSeat(seat);
+    // Попадание в ДОСТУПНОЕ место → выбрать/снять + подзум (поведение как раньше)
+    if (seat && seat.status === 'available') {
+        if (seat.selected) { removeSeat(seat); return; }   // повторный тап — снять
+        addSeat(seat);
+        return;
+    }
+    // Промах (пустая область ИЛИ серое/недоступное место): только на МИНИМАЛЬНОМ
+    // масштабе подзумливаем по точке тапа, как при выборе места, но БЕЗ выбора
+    // (корзина не меняется). Если уже подзумлен — ничего не делаем (как раньше).
+    if (hall.atMinScale()) {
+        hall.focusOnSvgPoint(p.x, p.y, FOCUS_SCALE);
+    }
 }
 
 /* --- Смена активного сеанса --- */

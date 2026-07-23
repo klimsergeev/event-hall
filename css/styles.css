@@ -110,13 +110,13 @@ html, body {
     flex: 0 1 auto;
     min-width: 0;
 }
-/* заголовок — компакт (sans 600, C1 12/18). БЕЗ transition на font-size. */
+/* заголовок — компакт (sans 600, 14px). БЕЗ transition на font-size. */
 .header.compact .ttl {
     font-family: var(--font-sans);
-    font-size: var(--fs-c1);          /* 12px */
+    font-size: 14px;
     line-height: var(--lh-c1);        /* 18px */
     font-weight: 600;
-    letter-spacing: -0.1px;
+    letter-spacing: 0;
     flex: 0 0 auto;
 }
 /* заголовок — окно marquee */
@@ -162,7 +162,8 @@ html, body {
     white-space: nowrap;
 }
 .header.compact .sub {
-    font-size: var(--fs-c1);
+    font-size: 14px;
+    letter-spacing: 0;
     line-height: var(--lh-c1);
     flex: 0 1 auto;
     min-width: 24px;
@@ -364,8 +365,17 @@ html, body {
     z-index: 4;
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    padding: 16px;
+    gap: 16px;                              /* Figma 4902-80252: gap 16 (галерея ↔ CTA) */
+    padding: 24px 16px 16px;                /* Figma 4902-80252: pt 24, px 16, pb 16 */
+    /* Подложка (Figma 4902-80252): вертикальный градиент белого — прозрачный сверху
+       растворяется в сплошной белый к 15% и далее до низа. Верхний край плавно
+       проявляется над схемой зала. Стопы/направление — по Figma + скринам редактора. */
+    background: linear-gradient(180deg,
+        rgba(255, 255, 255, 0) 0%,
+        #ffffff 15%,
+        #ffffff 100%);
+    /* pointer-events:none — градиент НЕ перехватывает клики по схеме над галереей;
+       ловят только билеты/кнопка (children ниже). */
     pointer-events: none;
 }
 .floating > * { pointer-events: auto; }
@@ -397,31 +407,33 @@ html, body {
     will-change: transform;
 }
 /* Карточка билета (Figma Ticket 4898-91317 Selected=False / 4899-43051 Selected=True).
-   ДВА состояния одного компонента, обе — карточка шириной 231:
-     • неактивная (Selected=False): 231×52, радиус 16, бордер 1px, без тени,
-       строка места P3 14/21, отступы px 12, gap 16, иконка × 24;
-     • активная  (Selected=True):  231×64, радиус 16, бордер 2px, отступы px 16,
-       gap 24, строка места P2 16/24, иконка × 24.
-   В КАРУСЕЛИ карточки лежат в ряд с зазором 8px (без перекрытия); активная едет
-   в центр, соседи выглядывают краями (peek). Глубину (scale/opacity/z-index)
-   правит JS покадрово. Без кругов/полосок. */
+   ДВА состояния одного компонента, ОБА — HUG-content по ширине (в Figma у обоих
+   ширина = Hug: класс без w-[…], только min-h/max-h; проверено get_design_context):
+     • неактивная (Selected=False): H52, радиус 12, bg #f5f4f2, без тени,
+       строка места P3 14/21, отступы px 12, gap 16, БЕЗ крестика;
+     • активная  (Selected=True):  H64, радиус 16, bg #fff, тень Shadows/Middle,
+       отступы px 16, gap 24, строка места P2 16/24, крестик × 24.
+   Ширина карточки = ширина содержимого + 2×padding (hug). В КАРУСЕЛИ карточки лежат
+   в ряд с зазором 8px (без перекрытия); активная едет в центр, соседи выглядывают
+   краями (peek). Геометрию карусели JS считает по ФАКТИЧЕСКИМ offsetWidth (переменная
+   ширина), глубину (z-index) правит покадрово. Без кругов/полосок. */
 .ticket {
     position: relative;                   /* z-index для peek-глубины */
     pointer-events: auto;
     touch-action: none;
     box-sizing: border-box;
+    width: max-content;                   /* hug: ширина по содержимому + padding (Figma Hug) */
     flex: 0 0 auto;
-    width: 231px;                         /* обе версии — одинаковая ширина */
-    background: var(--ctrl-alternative);  /* white */
-    border: 1px solid var(--bg-stroke);   /* Selected=False: бордер 1px, без тени */
-    border-radius: 16px;                  /* Figma 4898-91317: радиус 16 */
-    height: 52px;
+    background: var(--ctrl-alternative);  /* белый #fff по указанию пользователя (переопределяет Figma bg/secondary) */
+    border: 1px solid var(--bg-stroke);   /* Figma 4898-91317: border 1px solid Background/Stroke #a2a2a280 (rgba(162,162,162,.5)), stroke inside */
+    border-radius: 12px;                  /* Figma 4898-91317: радиус 12 */
+    height: 52px;                         /* Figma 4898-91317: 52 */
     display: flex;
     align-items: center;
     gap: 16px;                            /* Figma 4898-91317: gap 16 */
     padding-left: 12px;                   /* Figma 4898-91317: px 12 */
     padding-right: 12px;                  /* Figma 4898-91317: px 12 */
-    box-shadow: none;
+    box-shadow: none;                     /* Figma 4898-91317: без тени */
     overflow: hidden;
     cursor: grab;
     user-select: none;
@@ -429,22 +441,22 @@ html, body {
     /* плавный expand/collapse при смене активной; transform/opacity правит JS покадрово — их НЕ анимируем */
     transition: height 260ms cubic-bezier(0.2, 0.9, 0.25, 1.15),
                 border-radius 260ms cubic-bezier(0.2, 0.9, 0.25, 1.15),
-                border-width 160ms ease-out,
-                border-color 160ms ease-out;
+                background-color 160ms ease-out,
+                box-shadow 160ms ease-out;
 }
 .slider.grabbing .ticket { cursor: grabbing; }
 /* активная (Selected=True, Figma 4899-43051): h64, радиус 16, бордер 2px,
    px 16, gap 24. Оверрайдим базовый .ticket, чтобы правки Selected=False
    не протекали на активную. */
 .ticket.active {
-    height: 64px;
+    height: 64px;                         /* Figma 4899-43051: 64 */
+    background: var(--ctrl-alternative);  /* Figma 4899-43051: controls/alternative #ffffff */
+    border: 0;                            /* Figma 4899-43051: без бордера */
     border-radius: 16px;                  /* Figma 4899-43051: радиус 16 */
-    border-width: 2px;
-    border-color: var(--bg-stroke);
-    box-shadow: none;
-    gap: 24px;                            /* Figma 4899-43051: gap 24 */
-    padding-left: 16px;                   /* Figma 4899-43051: px 16 */
-    padding-right: 16px;                  /* Figma 4899-43051: px 16 */
+    box-shadow: var(--shadow-middle);     /* Figma Shadows/Middle */
+    gap: 16px;                            /* Figma 4899-43051 (размеченный скрин): gap 16 */
+    padding-left: 16px;                   /* Figma 4899-43051: px-left 16 */
+    padding-right: 12px;                  /* Figma 4899-43051 (размеченный скрин): px-right 12 */
 }
 .ticket .t-text {
     flex: 0 0 auto;
@@ -468,19 +480,24 @@ html, body {
 .ticket .t-x {
     flex: 0 0 auto;
     margin-left: auto;                    /* × — последний элемент, прижат к правому краю (padding-right) */
-    width: 24px;                          /* Figma: иконка 24 у обоих состояний */
+    width: 24px;                          /* Figma: иконка 24 */
     height: 24px;
     border: 0;
     background: transparent;
     padding: 0;
-    color: var(--icon-secondary);
+    color: var(--icon-primary);          /* Figma Icons/Primary #231d1f */
     cursor: pointer;
-    display: inline-flex;
     align-items: center;
     justify-content: center;
     -webkit-tap-highlight-color: transparent;
+    /* Figma: крестик есть ТОЛЬКО у активного (Selected=True), у неактивного его НЕТ.
+       При hug-ширине неактивный крестик раздул бы ширину на gap+24 → исключаем из
+       layout полностью (display:none), чтобы ширина неактивного = текст + 2×padding. */
+    display: none;
+    opacity: 1;
 }
-.ticket .t-x svg { display: block; width: 24px; height: 24px; }   /* иконка × 24 у обоих (Figma + правка пользователя) */
+.ticket.active .t-x { display: inline-flex; }
+.ticket .t-x svg { display: block; width: 24px; height: 24px; }   /* иконка × 24 */
 
 /* Клон уходящей карточки при удалении (fade): рисуется поверх слайдера, вне потока,
    чтобы не ломать layout карусели. Наследует вид .ticket; геометрию/анимацию (scale→.2 +
