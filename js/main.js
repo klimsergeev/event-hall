@@ -487,6 +487,14 @@ function onTicketUp(e) {
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
+/* --- Подложка галереи: видна только при непустой корзине. Пустая корзина →
+   display:none, чтобы белый градиент не рисовался и высота не резервировалась
+   (низ схемы зала не перекрывается белой пеленой). --- */
+function syncFloating() {
+    if (!floatingEl) return;
+    floatingEl.style.display = cart.length === 0 ? 'none' : '';
+}
+
 /* --- CTA: сумма = сумме цен выбранных мест. Пустая корзина → кнопки нет. --- */
 function renderCTA() {
     if (cart.length === 0) {
@@ -505,6 +513,7 @@ function renderCTA() {
 function refreshCart() {
     renderTickets();
     renderCTA();
+    syncFloating();
     if (renderSelection) renderSelection(seats);
 }
 
@@ -584,7 +593,15 @@ function deleteActiveTicket(idx) {
     renderCTA();                        // пересчитать сумму / скрыть кнопку при пустой корзине
     if (renderSelection) renderSelection(seats);   // перерисовать отметки на схеме
 
-    if (cart.length === 0) { renderTickets(); deleting = false; return; }
+    if (cart.length === 0) {
+        renderTickets();
+        // последний билет уходит с fade: exit-клон живёт внутри .floating > .slider,
+        // поэтому подложку прячем ПОСЛЕ завершения exit-анимации (иначе display:none
+        // мгновенно оборвёт fade). Тайминг = удаление клона в spawnExit.
+        setTimeout(syncFloating, EXIT_MS + 60);
+        deleting = false;
+        return;
+    }
 
     activeTicket = clamp(idx, 0, cart.length - 1);
     renderTickets({ instant: true });   // мгновенный лейаут без пружины
@@ -726,6 +743,7 @@ renderTabs();
 renderLegend();
 renderTickets();
 renderCTA();
+syncFloating();
 setActive(activeId);
 
 const hall = new HallViewport($('.map-viewport'), $('.map-content'), {
