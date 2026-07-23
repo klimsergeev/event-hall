@@ -388,10 +388,14 @@ html, body {
    центру галереи (сам расчёт сдвига трека — в js/main.js: anchorOffset/targetXFor). */
 .slider {
     position: relative;
+    z-index: 2;             /* всё поддерево слайдера (билеты + их тени) рисуется ПОВЕРХ кнопки CTA (z-index 1).
+                               .slider-track имеет transform → создаёт свой stacking-context, поэтому z-index
+                               билетов (100/98) заскоуплены внутри .slider; чтобы тень активного билета легла
+                               НА кнопку, поднимаем весь .slider над .cta именно здесь, на уровне .floating.
+                               Стек всё равно кэпнут внутри .floating (z4 < header z5). */
     width: 100%;            /* = ширина кнопки CTA (тот же padded-контейнер .floating) */
     height: 64px;
     overflow: visible;      /* соседи выглядывают краями (peek) */
-    isolation: isolate;
     pointer-events: none;   /* драг ловят сами карточки; пустоты пропускают пан схемы */
     touch-action: none;
 }
@@ -409,8 +413,8 @@ html, body {
 /* Карточка билета (Figma Ticket 4898-91317 Selected=False / 4899-43051 Selected=True).
    ДВА состояния одного компонента, ОБА — HUG-content по ширине (в Figma у обоих
    ширина = Hug: класс без w-[…], только min-h/max-h; проверено get_design_context):
-     • неактивная (Selected=False): H52, радиус 12, bg #f5f4f2, без тени,
-       строка места P3 14/21, отступы px 12, gap 16, БЕЗ крестика;
+     • неактивная (Selected=False): H52, радиус 12, bg #fff, тень Shadows/Lowest
+       (бордера НЕТ — заменён тенью), строка места P3 14/21, отступы px 12, gap 16, БЕЗ крестика;
      • активная  (Selected=True):  H64, радиус 16, bg #fff, тень Shadows/Middle,
        отступы px 16, gap 24, строка места P2 16/24, крестик × 24.
    Ширина карточки = ширина содержимого + 2×padding (hug). В КАРУСЕЛИ карточки лежат
@@ -424,16 +428,16 @@ html, body {
     box-sizing: border-box;
     width: max-content;                   /* hug: ширина по содержимому + padding (Figma Hug) */
     flex: 0 0 auto;
-    background: var(--ctrl-alternative);  /* белый #fff по указанию пользователя (переопределяет Figma bg/secondary) */
-    border: 1px solid var(--bg-stroke);   /* Figma 4898-91317: border 1px solid Background/Stroke #a2a2a280 (rgba(162,162,162,.5)), stroke inside */
+    background: var(--ctrl-alternative);  /* Figma 4898-91317: Background/Primary #ffffff */
+    border: 0;                            /* Figma 4898-91317: бордера НЕТ — заменён тенью (в ноде нет border, только bg+radius+shadow) */
     border-radius: 12px;                  /* Figma 4898-91317: радиус 12 */
-    height: 52px;                         /* Figma 4898-91317: 52 */
+    height: 52px;                         /* Figma 4898-91317: 52 (min-h/max-h 52) */
     display: flex;
     align-items: center;
     gap: 16px;                            /* Figma 4898-91317: gap 16 */
     padding-left: 12px;                   /* Figma 4898-91317: px 12 */
     padding-right: 12px;                  /* Figma 4898-91317: px 12 */
-    box-shadow: none;                     /* Figma 4898-91317: без тени */
+    box-shadow: var(--shadow-lowest);     /* Figma 4898-91317: Shadows/Lowest 0 0 6px rgba(35,29,31,.04), 0 4px 16px rgba(35,29,31,.04) */
     overflow: hidden;
     cursor: grab;
     user-select: none;
@@ -512,6 +516,8 @@ html, body {
 
 /* ---- 3.2 CTA ---- */
 .cta {
+    position: relative;                   /* нужен для z-index */
+    z-index: 1;                           /* ниже .slider (z-index 2) → тень активного билета ложится поверх кнопки */
     width: 100%;
     height: 52px;
     border: 0;

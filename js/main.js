@@ -191,9 +191,32 @@ function anchorOffset(i) {
     return (W - w) / 2;                               // середина — центр
 }
 
+/* Суммарная ширина контента карусели = правый край последней карточки в треке
+   (сумма фактических offsetWidth + зазоры между ними). Читает уже замеренные
+   cardStart/cardW (measureCards вызывается ПЕРЕД targetXFor во всех путях, после
+   applyActiveClass — значит ширины актуальны с учётом того, что активная шире). */
+function contentWidth() {
+    const n = cardW.length;
+    if (n === 0) return 0;
+    return (cardStart[n - 1] || 0) + (cardW[n - 1] || 0);
+}
+
+/* Переполнение = контент шире фактической ширины галереи (clientWidth слайдера)
+   хотя бы на 1px. clientWidth = ширина вьюпорта минус паддинги (не хардкодим 384).
+   Признак пересчитывается на КАЖДОМ вызове по свежим замерам (ширины меняются:
+   hug, смена активного расширяет карточку). */
+function isOverflow() {
+    return contentWidth() > sliderEl.clientWidth;
+}
+
 /* позиция трека, при которой карточка i стоит в своём якоре (left/center/right).
-   cardStart[i] — фактический левый край карточки в треке (сумма реальных ширин). */
+   cardStart[i] — фактический левый край карточки в треке (сумма реальных ширин).
+   БЕЗ переполнения (контент влезает в галерею): целевой trackX = 0 для ЛЮБОГО
+   активного — вся группа прижата к левому краю, смена активного ленту не двигает,
+   диапазон драга [0,0] (min=max=targetXFor(...)=0 → лента залипла на 0).
+   С переполнением: текущее якорение (первый→левый, средний→центр, последний→правый). */
 function targetXFor(i) {
+    if (!isOverflow()) return 0;
     return anchorOffset(i) - (cardStart[i] || 0);
 }
 
@@ -225,16 +248,17 @@ function setTrackX(px) {
    должна равняться layout-ширине, т.е. scale=1. Иерархию активной даёт разница
    высот (h64 vs h52), а не scale. */
 function paintDepth() {
-    const anchor = anchorOffset(activeTicket);                // якорь активной во вьюпорте
     ticketEls.forEach((el, i) => {
-        const cardLeft = trackX + (cardStart[i] || 0);        // фактический левый край карточки i
-        const pitch = (cardW[i] || 0) + TICKET_GAP;           // локальный шаг (переменный)
-        const dist = pitch ? Math.abs(cardLeft - anchor) / pitch : 0;   // ~0 у активной, ~1 у соседа
-        const t = Math.min(1, dist);
-        // без scale → рендер-ширина = 231 → видимый зазор = 8px. cardDX[i]=0 в покое
+        // без scale → рендер-ширина = layout-ширина → видимый зазор = 8px. cardDX[i]=0 в покое
         // (translateX(0) ≡ none); ненулевой — только во время FLIP-реколла соседей при удалении.
         el.style.transform = `translateX(${cardDX[i] || 0}px)`;
-        el.style.zIndex = String(100 - Math.round(t * 10));   // peek-слои: активная поверх соседей
+        // Z «веером» от активного: z СТРОГО убывает с расстоянием |i − activeTicket| в
+        // ОБЕ стороны. Активный — максимум (100), каждый билет дальше — на 1 ниже (для
+        // ВСЕХ, а не только соседей). Активный (100) выше кнопки CTA (z-index 1) → его
+        // тень ложится поверх соседних билетов И поверх кнопки. Диапазон при ≤8 билетах:
+        // 100…93 — все положительны и > z CTA. Пересчёт на каждый render/setTrackX/смену
+        // активного (paintDepth зовётся из setTrackX; activeTicket меняют snapTo/renderTickets).
+        el.style.zIndex = String(100 - Math.abs(i - activeTicket));
         el.classList.toggle('active', i === activeTicket);
     });
 }
@@ -254,9 +278,31 @@ function snapTo(i, velocity = 0) {
     });
 }
 
-/* Внешний API для QA-хуков/× неактивного: сделать i активной и выровнять по левому */
+/* ЕДИНАЯ ТОЧКА «смена активного билета → зум+центр схемы на его место».
+   Все пути РЕАЛЬНОЙ смены активного (тап по неактивному, свайп со снапом на
+   другой индекс, × неактивного, внешний setActiveTicket) проходят сюда. Зум
+   срабатывает ТОЛЬКО когда индекс фактически изменился (new !== old): snapTo
+   клампит и выставляет activeTicket, поэтому сравниваем ПОСТ-снап значение со
+   старым — снап-обратно-на-тот-же (target===cur) зум не даёт.
+   Тап по УЖЕ активному телу сюда НЕ идёт: он рецентрит намеренно прямым focusSeat
+   (см. onTicketUp). Добавление места тоже НЕ идёт (addSeat зовёт focusSeat сам —
+   иначе был бы двойной зум). */
+function activateTicket(i, velocity = 0) {
+    const prev = activeTicket;
+    snapTo(i, velocity);                 // клампит i и выставляет activeTicket
+    if (activeTicket !== prev) focusTicket(activeTicket);
+}
+
+/* Зум+центр схемы на место билета i (если есть) */
+function focusTicket(i) {
+    const seat = cart[i];
+    if (seat) focusSeat(seat);
+}
+
+/* Внешний API для QA-хуков/× неактивного: сделать i активной, выровнять по левому
+   и (при реальной смене индекса) подзумить схему на его место. */
 function setActiveTicket(i) {
-    snapTo(i);
+    activateTicket(i);
 }
 
 /* Рецентрирование без анимации (resize) */
@@ -445,8 +491,9 @@ function onTicketUp(e) {
     sliderEl.classList.remove('grabbing');
     const moved = Math.hypot(e.clientX - d.startX, e.clientY - d.startY);
     if (moved < TICKET_TAP) {
-        // tap по НЕактивной карточке (любая её область) → активировать и центрировать
-        if (d.index !== -1 && d.index !== activeTicket) { snapTo(d.index); return; }
+        // tap по НЕактивной карточке (любая её область) → активировать, центрировать
+        // карусель И подзумить схему на место нового активного (реальная смена индекса)
+        if (d.index !== -1 && d.index !== activeTicket) { activateTicket(d.index); return; }
         // tap по АКТИВНОЙ карточке ВНЕ зоны ×+буфер → подзум схемы на место этого
         // билета (тот же зум/центрирование, что при выборе места на схеме).
         // Место НЕ удаляется, корзина/активность не меняются. В зоне ×+буфер — no-op
@@ -482,7 +529,9 @@ function onTicketUp(e) {
     };
     // тот же velocity-based пружинный снап — меняется только целевой индекс.
     // В пружину отдаём оконную скорость: анимация соответствует силе флика.
-    snapTo(target, vxWin);
+    // activateTicket зумит ОДИН раз на ФИНАЛЬНОМ активном и только при реальной
+    // смене (target !== cur): слабый свайп со снапом обратно (target===cur) — без зума.
+    activateTicket(target, vxWin);
 }
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
@@ -605,6 +654,10 @@ function deleteActiveTicket(idx) {
 
     activeTicket = clamp(idx, 0, cart.length - 1);
     renderTickets({ instant: true });   // мгновенный лейаут без пружины
+    // активным стал СОСЕДНИЙ билет (удалённый исчез) → зум+центр на его место.
+    // Пустая корзина сюда не доходит (ранний return выше) → зума при удалении
+    // последнего билета нет. add сюда не заходит → двойного зума нет.
+    focusTicket(activeTicket);
 
     // FLIP invert: сдвинуть каждую карточку обратно к её прежней позиции
     const dx0 = ticketEls.map((el, i) => {
