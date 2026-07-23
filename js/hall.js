@@ -51,6 +51,9 @@ export class HallViewport {
         this.tx = 0;      // пан по X в экранных px
         this.ty = 0;      // пан по Y в экранных px
         this.notified = false;
+        // на время программного reset() компактификация подавляется: возврат к
+        // загрузочному виду не должен сворачивать шапку (компакт — только от жеста)
+        this._suppressCompact = false;
 
         this.drag = { active: false, startX: 0, startY: 0, baseTx: 0, baseTy: 0, pid: null };
         this.pinch = { active: false, baseDist: 0, baseScale: 1 };
@@ -168,10 +171,8 @@ export class HallViewport {
 
     /* Плавный переход состояния (reset / кнопочный зум) — твин по rAF,
        т.к. CSS-transition к атрибуту viewBox не применяется. */
-    _animateTo(s, nx, ny) {
-        const [tsx, tsy] = this._clampPan(nx, ny, s);
+    _animateTo(s, nx, ny, onDone) {
         const fromS = this.scale, fromX = this.tx, fromY = this.ty;
-        const toS = s, toX = tsx, toY = tsy;
         const dur = 260;
         const t0 = performance.now();
         cancelAnimationFrame(this._raf);
@@ -179,8 +180,14 @@ export class HallViewport {
         const step = (now) => {
             const p = Math.min(1, (now - t0) / dur);
             const k = ease(p);
-            this._apply(fromS + (toS - fromS) * k, fromX + (toX - fromX) * k, fromY + (toY - fromY) * k);
+            // Цель по Y может «двигаться»: reset тянет к restY, а высота шапки при
+            // разворачивании из компакта анимируется (restOffsetY растёт) →
+            // пересчитываем цель каждый кадр, иначе твин недоедет до финала.
+            const nyVal = typeof ny === 'function' ? ny() : ny;
+            const [toX, toY] = this._clampPan(nx, nyVal, s);
+            this._apply(fromS + (s - fromS) * k, fromX + (toX - fromX) * k, fromY + (toY - fromY) * k);
             if (p < 1) this._raf = requestAnimationFrame(step);
+            else if (onDone) onDone();
         };
         this._raf = requestAnimationFrame(step);
     }
@@ -202,6 +209,9 @@ export class HallViewport {
     _checkCompact() {
         const should = this._shouldCompact();
         if (should && !this.notified) {
+            // Программный reset() к загрузочному виду НЕ сворачивает шапку:
+            // компакт наступает только от реального пана/зума пользователя.
+            if (this._suppressCompact) return;
             this.notified = true;
             this.opts.onInteractStart && this.opts.onInteractStart();
         } else if (!should && this.notified) {
@@ -211,11 +221,25 @@ export class HallViewport {
     }
 
     reset() {
-        this._animateTo(this._fitScale(), 0, this._restY());
+        // Программный возврат к загрузочному виду. Он НЕ должен сворачивать шапку
+        // (иначе смена таба сама уводила бы её в компакт и застревала: свёрнутая
+        // шапка ниже → restY падает → цель твина «уезжает» → should навсегда true).
+        // Если шапка была свёрнута пользователем (зум) — разворачиваем её здесь,
+        // а на время твина подавляем компактификацию. Цель по Y тянем к restY
+        // «живьём»: высота развёрнутой шапки восстанавливается анимацией.
+        this._suppressCompact = true;
+        if (this.notified) {
+            this.notified = false;
+            this.opts.onInteractEnd && this.opts.onInteractEnd();
+        }
+        this._animateTo(this._fitScale(), 0, () => this._inset('restOffsetY'), () => {
+            this._suppressCompact = false;
+        });
     }
 
     zoomBy(delta) {
         cancelAnimationFrame(this._raf);
+        this._suppressCompact = false;   // жест пользователя → компакт разрешён
         const next = Math.max(this._fitScale(), Math.min(MAX_SCALE, this.scale + delta));
         this._animateTo(next, this.tx, this.ty);
     }
@@ -253,6 +277,7 @@ export class HallViewport {
        Зум берём не меньше текущего (жест всегда приближает, не отдаляет). */
     focusOnSvgPoint(px, py, scale) {
         const { cover } = this._dims();
+        this._suppressCompact = false;   // фокус на месте (жест выбора) → компакт разрешён
         const s = Math.max(this.scale, this._fitScale(), Math.min(MAX_SCALE, scale));
         const ppu = cover * s;
         const tx = (BASE_W / 2 - px) * ppu;
@@ -265,6 +290,7 @@ export class HallViewport {
         if (e.pointerType === 'touch') return; // тач — отдельно
         e.preventDefault();
         cancelAnimationFrame(this._raf);
+        this._suppressCompact = false;   // жест пользователя → компакт разрешён
         this._tap = { x: e.clientX, y: e.clientY, t: performance.now() };
         this.drag = { active: true, startX: e.clientX, startY: e.clientY, baseTx: this.tx, baseTy: this.ty, pid: e.pointerId };
         try { this.vp.setPointerCapture(e.pointerId); } catch {}
@@ -299,6 +325,7 @@ export class HallViewport {
     _onWheel = (e) => {
         e.preventDefault();
         cancelAnimationFrame(this._raf);
+        this._suppressCompact = false;   // жест пользователя → компакт разрешён
         const delta = -e.deltaY * 0.003;
         const next = Math.max(this._fitScale(), Math.min(MAX_SCALE, this.scale + delta));
         this._apply(next, this.tx, this.ty);
@@ -307,6 +334,7 @@ export class HallViewport {
     /* ---- touch: pinch-зум + 1-палец пан ---- */
     _onTouchStart = (e) => {
         cancelAnimationFrame(this._raf);
+        this._suppressCompact = false;   // жест пользователя → компакт разрешён
         if (e.touches.length === 2) {
             const [a, b] = e.touches;
             this.pinch = {
