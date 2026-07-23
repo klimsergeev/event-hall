@@ -66,6 +66,12 @@ export class HallViewport {
         this.scale = this._fitScale();
         // ...опущенный на оффсет покоя (баланс леттербокса под развёрнутой шапкой)
         this.ty = this._restY();
+        // Стабильная опора вертикального пан-теста компакта (см. _shouldCompact).
+        // Фиксируется на РАЗВЁРНУТОМ виде покоя и НЕ пересчитывается из _restY()
+        // на лету — иначе усадка шапки при компакте двигала бы опору и порог
+        // осциллировал бы у границы (петля). Обновляется только там, где вид
+        // покоя заново устанавливается со СТАБИЛЬНОЙ высотой шапки: refit/reset.
+        this._panRefY = this.ty;
     }
 
     /* Вертикальный оффсет ПОКОЯ (экранные px): в состоянии загрузки/покоя
@@ -167,6 +173,9 @@ export class HallViewport {
     /* Пересчитать viewBox под текущее состояние (после resize). */
     refit() {
         this._apply(this.scale, this.tx, this.ty);
+        // resize мог изменить высоту РАЗВЁРНУТОЙ шапки → обновить опору пана,
+        // но только когда шапка НЕ свёрнута (иначе зафиксируем компактную высоту).
+        if (!this.notified) this._panRefY = this._restY();
     }
 
     /* Плавный переход состояния (reset / кнопочный зум) — твин по rAF,
@@ -197,9 +206,18 @@ export class HallViewport {
        пан-смещение this.tx/ty (экранные px); порог |·| > 0.5. */
     _shouldCompact() {
         const zoomed = this.scale > this._fitScale() * 1.001;
-        // пан меряем ОТНОСИТЕЛЬНО оффсета покоя: оффсет сам по себе — не «пан»,
+        // Пан меряем ОТНОСИТЕЛЬНО оффсета покоя: оффсет сам по себе — не «пан»,
         // иначе загрузочное опускание схемы схлопывало бы шапку.
-        const panned = Math.abs(this.tx) > 0.5 || Math.abs(this.ty - this._restY()) > 0.5;
+        // ВАЖНО (анти-петля): опору берём СТАБИЛЬНУЮ, не зависящую от текущего
+        // состояния компакта. Когда rest-оффсет не завязан на высоту шапки
+        // (корзина непуста → restOffsetY=0), _restY() и так стабилен — берём его
+        // напрямую. Иначе (корзина пуста → restOffsetY=высота/2) используем
+        // зафиксированную на развёрнутом виде _panRefY: усадка шапки при компакте
+        // НЕ должна смещать порог, иначе он флипается у границы (см. баг pulse).
+        const ref = this._inset('restOffsetY') === 0
+            ? this._restY()
+            : (this._panRefY != null ? this._panRefY : this._restY());
+        const panned = Math.abs(this.tx) > 0.5 || Math.abs(this.ty - ref) > 0.5;
         const mode = this.opts.compactionMode;
         if (mode === 'never') return false;
         if (mode === 'zoom-only') return zoomed;
@@ -234,6 +252,9 @@ export class HallViewport {
         }
         this._animateTo(this._fitScale(), 0, () => this._inset('restOffsetY'), () => {
             this._suppressCompact = false;
+            // вид покоя восстановлен, шапка развёрнута и стабильна → зафиксировать
+            // опору пана заново (высота развёрнутой шапки могла измениться).
+            this._panRefY = this._restY();
         });
     }
 
