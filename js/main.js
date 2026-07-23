@@ -340,10 +340,14 @@ function onTicketDown(e, el) {
     if (deleting) return;
     if (e.target.closest('.t-x')) return;
     if (stopSpring) { stopSpring(); stopSpring = null; }
+    const t0 = performance.now();
     tDrag = {
         startX: e.clientX, startY: e.clientY,
         startTrack: trackX, pid: e.pointerId,
-        lastX: e.clientX, lastT: performance.now(), vx: 0,
+        lastX: e.clientX, lastT: t0, vx: 0,
+        // окно последних сэмплов {t,x} для робастной оценки скорости флика
+        // (одиночный last-frame занижает vx: палец тормозит перед отпусканием).
+        samples: [{ t: t0, x: e.clientX }],
         index: ticketEls.indexOf(el),
     };
     try { el.setPointerCapture(e.pointerId); } catch {}
@@ -355,9 +359,15 @@ function onTicketMove(e) {
     if (!tDrag || e.pointerId !== tDrag.pid) return;
     const now = performance.now();
     const dt = now - tDrag.lastT;
-    if (dt > 0) tDrag.vx = (e.clientX - tDrag.lastX) / dt * 1000;
+    if (dt > 0) tDrag.vx = (e.clientX - tDrag.lastX) / dt * 1000;   // last-segment (шумный)
     tDrag.lastX = e.clientX;
     tDrag.lastT = now;
+    // копим окно сэмплов; чистим всё старше VX_WINDOW от текущего момента
+    tDrag.samples.push({ t: now, x: e.clientX });
+    const cutoff = now - VX_WINDOW;
+    let k = 0;
+    while (k < tDrag.samples.length - 1 && tDrag.samples[k + 1].t < cutoff) k++;
+    if (k > 0) tDrag.samples.splice(0, k);
 
     let x = tDrag.startTrack + (e.clientX - tDrag.startX);   // follow-the-finger 1:1
     // резина за краями
@@ -366,6 +376,66 @@ function onTicketMove(e) {
     if (x > max) x = max + (x - max) * 0.35;
     if (x < min) x = min + (x - min) * 0.35;
     setTrackX(x);
+}
+
+/* --- Скорость жеста: РОБАСТНОЕ окно вместо last-frame ---
+   Один последний сегмент перед отпусканием занижает скорость (палец тормозит),
+   поэтому даже сильный флик давал низкий release-vx → карусель всегда шла +1.
+   Берём среднюю скорость по последним VX_WINDOW мс: (Δx / Δt) на всём окне.
+   Флик так надёжно отдаёт свою реальную высокую скорость. */
+const VX_WINDOW = 70;             // мс: окно усреднения скорости отпускания
+function windowedVX(samples, now) {
+    if (!samples || samples.length < 2) return 0;
+    const cutoff = now - VX_WINDOW;
+    // первый сэмпл внутри окна (или предыдущий к нему, чтобы окно не схлопнулось)
+    let i = samples.length - 1;
+    while (i > 0 && samples[i - 1].t >= cutoff) i--;
+    const a = samples[i], b = samples[samples.length - 1];
+    const dt = b.t - a.t;
+    return dt > 0 ? (b.x - a.x) / dt * 1000 : 0;
+}
+
+/* --- Маппинг «сила жеста → число шагов»: проекция инерции в ПЕЙЧАХ карточки ---
+   Не привязываемся к магическим px/s. Тормозной путь флика proj = |vx|·VX_TAU
+   (VX_TAU — время затухания инерции, с) делим на PITCH — фактический шаг НЕАКТИВНОЙ
+   карточки (её ширина + зазор, ~128px). Округляем → сколько карточек пролетел бросок.
+   Это self-calibrating к ширине карточек и НЕ зависит от сжатия якорей у краёв
+   (важно: у левого края якорь 0→1 сжат до ~48px — проекция «на якорь» перескакивала
+   бы соседа; счёт в пейчах карточки этого лишён). Достижение края — через clamp:
+   у последней карточки якорь почти совпадает с предпоследним, так что сильный флик
+   всегда доводит до края.
+     • INTENT_FRACTION 0.32 — доля пути до соседа: прошли её → жест намеренный;
+     • INTENT_VX 250 px/s — либо короткий, но быстрый флик тоже намеренный;
+     • VX_TAU 0.26 c — тормозное время (замерено на реальных жестах: обычный свайп
+       vx≈480–550 → ровно сосед; уверенный флик ≈1600 → +3; сильный ≈3400–3600 →
+       через весь список до края). round(proj/PITCH): 1 шаг держится до vx≈770. */
+const INTENT_FRACTION = 0.32;
+const INTENT_VX = 250;
+const VX_TAU = 0.26;
+
+/* Дискретный выбор целевого индекса по параметрам жеста.
+   cur — активный на старте жеста; n — число билетов; deltaX — смещение пальца по X
+   (px; влево < 0); vx — РОБАСТНАЯ оконная скорость при отпускании (px/s; влево < 0);
+   stepDist — расстояние до соседнего якоря (px, > 0; для порога намеренности);
+   pitch — шаг неактивной карточки (px; единица счёта шагов; опц. → fallback stepDist).
+   Направление — от ЗНАКА жеста; дальность — проекция инерции в пейчах карточки. */
+function chooseTicketTarget({ cur, n, deltaX, vx, stepDist, pitch }) {
+    // свайп влево (deltaX < 0) → следующий билет (+1); при нулевом смещении — по vx
+    let dir = deltaX < 0 ? 1 : deltaX > 0 ? -1 : 0;
+    if (dir === 0) dir = vx < 0 ? 1 : vx > 0 ? -1 : 0;
+    if (dir === 0) return cur;
+
+    const travel = Math.abs(deltaX);
+    const speed = Math.abs(vx);
+    // намеренность: прошли заметную долю пути ЛИБО фликнули достаточно быстро
+    const intentional = travel >= stepDist * INTENT_FRACTION || speed >= INTENT_VX;
+
+    const P = pitch > 0 ? pitch : (stepDist > 0 ? stepDist : 1);
+    const proj = speed * VX_TAU;                      // тормозной путь инерции, px
+    let steps = Math.round(proj / P);                 // сколько карточек пролетел бросок
+    if (!intentional && steps < 1) return cur;        // слабый свайп → снап на текущий
+    if (steps < 1) steps = 1;                         // намеренный → минимум сосед
+    return clamp(cur + dir * steps, 0, n - 1);        // насыщение до края списка
 }
 
 function onTicketUp(e) {
@@ -387,13 +457,32 @@ function onTicketUp(e) {
         }
         return;
     }
-    // ручной свайп: ближайшая карточка (по её якорной позиции targetXFor —
-    // шаг неравномерный, т.к. на краях якорь меняется) + инерция флика
-    let nearest = nearestIndex(trackX);
-    if (Math.abs(d.vx) > 450) {                              // флик двигает на соседа
-        nearest = clamp(nearest + Math.sign(-d.vx), 0, ticketEls.length - 1);
-    }
-    snapTo(nearest, d.vx);
+    // ручной свайп: целевой индекс ДИСКРЕТНО от текущего активного — направление по
+    // знаку жеста, число шагов по скорости флика (см. chooseTicketTarget). Позицию
+    // momentum НЕ используем для выбора индекса: узкие карточки иначе перескакивают.
+    const cur = activeTicket;
+    const n = ticketEls.length;
+    const deltaX = e.clientX - d.startX;
+    // РОБАСТНАЯ скорость отпускания по окну (не шумный last-frame d.vx)
+    const vxWin = windowedVX(d.samples, performance.now());
+    // расстояние по треку до соседа в сторону жеста (для порога намеренности).
+    // targetXFor читается при текущем активном (cur шире) — реальная геометрия снапа.
+    const dirGuess = deltaX < 0 ? 1 : deltaX > 0 ? -1 : (vxWin < 0 ? 1 : -1);
+    const nb = clamp(cur + dirGuess, 0, n - 1);
+    const stepDist = Math.abs(targetXFor(nb) - targetXFor(cur)) || ((cardW[cur] || 0) + TICKET_GAP);
+    // PITCH — шаг НЕАКТИВНОЙ карточки (её ширина + зазор). Единица счёта шагов флика,
+    // устойчивая к сжатию якорей у краёв. nb инактивна при cur-активном → её ширина.
+    const pitch = ((cardW[nb] || cardW[cur] || 0) + TICKET_GAP);
+    const target = chooseTicketTarget({ cur, n, deltaX, vx: vxWin, stepDist, pitch });
+    // QA-хук: состояние жеста в момент отпускания (для детерминированной проверки)
+    window.__lastTicketRelease = {
+        cur, target, deltaX, stepDist, trackX,        // trackX — позиция трека при отпускании
+        vxLast: d.vx, vxWin,                          // last-frame vs робастное окно
+        steps: Math.abs(target - cur),
+    };
+    // тот же velocity-based пружинный снап — меняется только целевой индекс.
+    // В пружину отдаём оконную скорость: анимация соответствует силе флика.
+    snapTo(target, vxWin);
 }
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
@@ -786,4 +875,33 @@ hallReady.then(() => {
     window.__cart = cart;                       // QA-доступ к корзине
     window.__addSeat = addSeat;                 // QA: программный выбор места
     window.__tapSeat = tapSeat;                 // QA: тап по месту
+    window.__chooseTicketTarget = chooseTicketTarget;  // QA: детерминированный выбор индекса снапа
+
+    /* QA: прогнать РЕАЛИСТИЧНЫЙ жест по карусели через НАСТОЯЩИЕ события
+       (pointerdown → серия pointermove с реальным таймингом → pointerup).
+       toStart — сделать активным индекс перед жестом; moves — [{dx, dt(мс)}].
+       Возвращает состояние отпускания (__lastTicketRelease) + итоговый activeTicket. */
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+    window.__runTicketGesture = async ({ toStart, moves = [], settle = 480 } = {}) => {
+        if (typeof toStart === 'number') { setActiveTicket(toStart); await sleep(settle); }
+        const el = ticketEls[activeTicket];
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        let x = r.left + r.width / 2;
+        const y = r.top + r.height / 2;
+        const id = 1;
+        const pe = (type, cx) => new PointerEvent(type, {
+            pointerId: id, clientX: cx, clientY: y,
+            bubbles: true, cancelable: true, pointerType: 'touch', isPrimary: true,
+        });
+        el.dispatchEvent(pe('pointerdown', x));
+        for (const m of moves) {
+            await sleep(m.dt);
+            x += m.dx;
+            el.dispatchEvent(pe('pointermove', x));
+        }
+        el.dispatchEvent(pe('pointerup', x));
+        await sleep(settle);
+        return { ...window.__lastTicketRelease, activeTicket };
+    };
 });
