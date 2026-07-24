@@ -5,6 +5,7 @@ import { EVENT, SESSIONS, sessionTiers, sessionMin, MAX_SEATS, TWEAKS, formatPri
 import { CompactTitle, alignActiveChip } from './header.js';
 import { HallViewport } from './hall.js';
 import { buildSeats, createSelectionLayer, applySessionPrices } from './seats.js';
+import { initTweaks } from './tweaks.js';
 
 /* --- Иконки (инлайн SVG) --- */
 const icoChevronLeft =
@@ -290,7 +291,10 @@ function snapTo(i, velocity = 0) {
 function activateTicket(i, velocity = 0) {
     const prev = activeTicket;
     snapTo(i, velocity);                 // клампит i и выставляет activeTicket
-    if (activeTicket !== prev) focusTicket(activeTicket);
+    if (activeTicket !== prev) {
+        renderSelectionActive();         // увеличенным становится место нового активного
+        focusTicket(activeTicket);
+    }
 }
 
 /* Зум+центр схемы на место билета i (если есть) */
@@ -314,6 +318,7 @@ function recenterTickets() {
     applyActiveClass();
     measureCards();
     setTrackX(targetXFor(activeTicket));
+    renderSelectionActive();                      // синхронизировать увеличенное место (QA-хуки/resize меняют activeTicket)
 }
 
 function renderTickets(opts = {}) {
@@ -553,17 +558,27 @@ function renderCTA() {
     }
     const total = cart.reduce((acc, s) => acc + (s.price || 0), 0);
     ctaEl.style.display = '';
+    // Figma 4902:80257 (Button): текст + шеврон-вправо 24×24 (Icons/Inverted #fafafa),
+    // gap 4. Текст оставляем «Оформить: {сумма} ₽» (без слова «заказ»).
     ctaEl.innerHTML =
-        `<span>Оформить: ${formatPrice(total)}</span>`;
+        `<span>Оформить: ${formatPrice(total)}</span>` +
+        `<span class="cta-ico">${icoChevronRight}</span>`;
 }
 
 /* --- Корзина ↔ схема: выбор/снятие мест --- */
+/* Перерисовать слой выбранных мест с учётом АКТИВНОГО билета (cart[activeTicket]) —
+   его место рисуется крупнее и поверх остальных. Вызывать при любой смене
+   корзины ИЛИ активного билета, чтобы увеличенным было ровно одно (новое) место. */
+function renderSelectionActive() {
+    if (renderSelection) renderSelection(seats, cart[activeTicket]);
+}
+
 /* Перерисовать зависимые от корзины UI (галерея + CTA + отметки на схеме) */
 function refreshCart() {
     renderTickets();
     renderCTA();
     syncFloating();
-    if (renderSelection) renderSelection(seats);
+    renderSelectionActive();
 }
 
 /* Добавить место: отметить selected, положить в корзину, показать билет,
@@ -640,7 +655,8 @@ function deleteActiveTicket(idx) {
     seat.selected = false;              // место схемы → дефолт
     cart.splice(idx, 1);                // выкинуть из корзины
     renderCTA();                        // пересчитать сумму / скрыть кнопку при пустой корзине
-    if (renderSelection) renderSelection(seats);   // перерисовать отметки на схеме
+
+    renderSelectionActive();            // перерисовать отметки; увеличенным станет место нового активного
 
     if (cart.length === 0) {
         renderTickets();
@@ -653,6 +669,7 @@ function deleteActiveTicket(idx) {
     }
 
     activeTicket = clamp(idx, 0, cart.length - 1);
+    renderSelectionActive();            // увеличенным становится место нового активного (в т.ч. при удалении последнего билета)
     renderTickets({ instant: true });   // мгновенный лейаут без пружины
     // активным стал СОСЕДНИЙ билет (удалённый исчез) → зум+центр на его место.
     // Пустая корзина сюда не доходит (ранний return выше) → зума при удалении
@@ -817,6 +834,9 @@ const hall = new HallViewport($('.map-viewport'), $('.map-content'), {
 });
 window.__hall = hall;   // QA-хук: доступ к вьюпорту схемы из консоли/тестов
 
+// окно «твиков» (bottom-sheet по Figma 4960-122090) + детектор жеста «2 пальца, удержание»
+initTweaks();
+
 // стартовое выравнивание активного чипа (по умолчанию — левый край; последний — правый)
 {
     const isLast = SESSIONS.findIndex((s) => s.id === activeId) === SESSIONS.length - 1;
@@ -920,8 +940,10 @@ hallReady.then(() => {
         clone.style.opacity = '0.45';
         sliderEl.appendChild(clone);
         const seat = cart[idx]; seat.selected = false;
-        cart.splice(idx, 1); renderCTA(); if (renderSelection) renderSelection(seats);
+        cart.splice(idx, 1); renderCTA();
         activeTicket = clamp(idx, 0, cart.length - 1);
+        renderSelectionActive();
+
         renderTickets({ instant: true });
         ticketEls.forEach((el, i) => {
             const f = firstMap.get(cart[i]);

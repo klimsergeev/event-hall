@@ -111,23 +111,47 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const SEL_COLOR = '#FF5005';
 const CHECK_D = 'M94.5543 18.1123C94.7008 18.2587 94.7008 18.4962 94.5543 18.6426L91.5983 21.5986C91.528 21.6689 91.4326 21.7085 91.3332 21.7085C91.2337 21.7085 91.1383 21.6689 91.068 21.5986L89.4013 19.932C89.2549 19.7855 89.2549 19.5481 89.4013 19.4016C89.5478 19.2552 89.7852 19.2552 89.9317 19.4016L91.3332 20.8031L94.024 18.1123C94.1704 17.9658 94.4079 17.9658 94.5543 18.1123Z';
 
-function selectedGroup(x, y) {
-    return `<g transform="translate(${x - 88} ${y - 16})">`
-        + `<rect x="88" y="16" width="8" height="8" rx="2.5" fill="${SEL_COLOR}"/>`
+/* Масштаб маркера АКТИВНОГО места относительно обычного выбранного.
+   1.4× — заметная разница (визуально ~11px → ~15.5px с учётом обводки),
+   середина рекомендованного диапазона 1.3–1.5×: явно выделяется, но не
+   перекрывает соседние места и не выглядит чрезмерно. */
+const ACTIVE_SCALE = 1.4;
+
+/* Маркер выбранного места. scale — множитель размера вокруг ЦЕНТРА места
+   (x+4, y+4): центр остаётся на месте при любом масштабе, растёт только размер.
+   Композиция трансформа: translate(cx,cy) scale(k) translate(-92,-20) — при k=1
+   даёт исходный translate(x-88,y-16); центр контента (92,20) всегда → (cx,cy). */
+function selectedGroup(x, y, scale = 1) {
+    const inner =
+        `<rect x="88" y="16" width="8" height="8" rx="2.5" fill="${SEL_COLOR}"/>`
         + `<rect x="88" y="16" width="8" height="8" rx="2.5" stroke="${SEL_COLOR}" stroke-width="3"/>`
-        + `<path fill-rule="evenodd" clip-rule="evenodd" d="${CHECK_D}" fill="white"/>`
-        + `</g>`;
+        + `<path fill-rule="evenodd" clip-rule="evenodd" d="${CHECK_D}" fill="white"/>`;
+    const t = scale === 1
+        ? `translate(${x - 88} ${y - 16})`
+        : `translate(${x + 4} ${y + 4}) scale(${scale}) translate(-92 -20)`;
+    return `<g transform="${t}">${inner}</g>`;
 }
 
-/* Создать слой выбора и вернуть функцию его перерисовки под список мест. */
+/* Создать слой выбора и вернуть функцию его перерисовки под список мест.
+   activeSeat — объект-место активного билета: рисуется ПОСЛЕДНИМ (поверх всех)
+   и КРУПНЕЕ (ACTIVE_SCALE). В любой момент увеличено ровно одно место. */
 export function createSelectionLayer(svgRoot) {
     const layer = document.createElementNS(SVG_NS, 'g');
     layer.setAttribute('class', 'sel-layer');
     svgRoot.appendChild(layer);
-    return function render(seats) {
-        layer.innerHTML = seats
-            .filter((s) => s.selected)
-            .map((s) => selectedGroup(+s.el.getAttribute('x'), +s.el.getAttribute('y')))
-            .join('');
+    return function render(seats, activeSeat) {
+        const selected = seats.filter((s) => s.selected);
+        const parts = selected
+            .filter((s) => s !== activeSeat)
+            .map((s) => selectedGroup(+s.el.getAttribute('x'), +s.el.getAttribute('y')));
+        // активное место — крупнее и поверх остальных (последним в document order)
+        if (activeSeat && activeSeat.selected) {
+            parts.push(selectedGroup(
+                +activeSeat.el.getAttribute('x'),
+                +activeSeat.el.getAttribute('y'),
+                ACTIVE_SCALE,
+            ));
+        }
+        layer.innerHTML = parts.join('');
     };
 }
